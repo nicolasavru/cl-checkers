@@ -59,7 +59,7 @@
                             (- ply 1) eval-fn))
                 0) ;; do something useful here?
             (do* ((best-move (car moves))
-                  (moves2 moves (cdr moves))
+                  (moves2 moves (cdr moves2))
                   (move (car moves2) (car moves2))
                   (board2 (make-move move (copy-board board)))
                   (val (- (alpha-beta (opponent player) board2
@@ -76,7 +76,7 @@
   #'(lambda (player board)
       (multiple-value-bind (value move)
           (alpha-beta player board
-                      most-positive-fixnum most-negative-fixnum
+                      most-negative-fixnum most-positive-fixnum
                       ply eval-fn)
         (declare (ignore value))
         move)))
