@@ -67,6 +67,16 @@
 (defparameter white-kingrow (nth-row-squares 1))
 (defparameter black-kingrow (nth-row-squares 8))
 
+(defun count-pieces (player board)
+  "Count player's pieces."
+  (+ (count (symbol-value (symb player '-man)) board)
+     ;; weight kings twice as much as pieces
+     (* 2 (count (symbol-value (symb player '-king)) board))))
+
+(defun count-difference (player board)
+  "Count player's pieces minus opponent's pieces."
+  (- (count-pieces player board)
+     (count-pieces (opponent player) board)))
 
 (defun initial-board ()
   "Return a board with initial positions of both players"
@@ -181,7 +191,8 @@
 
 (defun make-move (move board)
   "Update BOARD to reflect move by player. Assume MOVE is
-  legal. Return T if a piece was kinged, else NIL."
+  legal. Return the updated board and T if a piece was kinged, else
+  NIL."
   (let* ((src (car move))
          (vec (cdr move))
          (dst (+ src vec)))
@@ -191,7 +202,7 @@
       (setf (bref board src) empty)
       (if (member vec all-jumps)
           (setf (bref board (+ (/ vec 2) src)) empty))
-      kingedp)))
+      (values board kingedp))))
 
 (defun get-move (strategy player board &key piece (type (append all-steps all-jumps)))
   "Call PLAYER's STRATEGY to get a move. PIECE, if provided, specifies
@@ -210,9 +221,8 @@
               (warn "Illegal move: ~a" move)
               (get-move strategy player board :piece piece :type type))))))
 
-(defun checkers (black-strategy white-strategy &optional (print t))
+(defun checkers (black-strategy white-strategy &key (board (initial-board)) (print t))
   "Play a game of checkers. Return the victor (though not in a vector). "
-  (let ((board (initial-board)))
     (do* ((prev-player () player)
           (player 'black (next-player player move board kingedp))
           (strategy black-strategy (if (eql player 'black) black-strategy white-strategy))
@@ -222,8 +232,17 @@
                            (progn (format t "DOUBLE JUMP~%") (force-output *standard-output*)
                                   (list :piece (+ (car move) (cdr move))
                                         :type all-jumps)))))
-          (kingedp (when move (make-move move board)) (when move (make-move move board))))
+          (kingedp (when move
+                     (multiple-value-bind (board kingedp)
+                         (make-move move board)
+                       (declare (ignore board))
+                       kingedp))
+                   (when move
+                     (multiple-value-bind (board kingedp)
+                         (make-move move board)
+                       (declare (ignore board))
+                       kingedp))))
          ((null (legal-moves player board)) (opponent player))
       (when (and move print)
         (format t "Move ~a made by player ~a.~%Updated board:~%" move player)
-        (print-board board)))))
+        (print-board board))))

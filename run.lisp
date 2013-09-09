@@ -6,4 +6,4 @@
 (defparameter b (initial-board))
 (print-board b)
 ;; (checkers #'random-strategy #'human)
-(format t "~%~a wins!~%" (checkers #'random-strategy #'random-strategy))
+(format t "~%~a wins!~%" (checkers (minimax-search 3 #'count-difference)  #'random-strategy))
