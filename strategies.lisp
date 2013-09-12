@@ -52,24 +52,55 @@
   (if (= ply 0)
       (funcall eval-fn player board)
       (let ((moves (legal-moves player board)))
+        ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
+        (if (null moves)
+            (if (null (legal-moves (opponent player) board))
+                (- (alpha-beta2 (opponent player) board
+                               (- cutoff) (- achievable)
+                               (- ply 1) eval-fn))
+                0)
+            (do* ((best-move (car moves))
+                  (moves2 moves (cdr moves2))
+                  (move (car moves2) (car moves2)))
+                 ((or (null move) (>= achievable cutoff)) (values achievable best-move))
+              (let* ((board2 (make-move move (copy-board board)))
+                     (val (- (alpha-beta3
+                              (opponent player) board2
+                              (- cutoff) (- achievable)
+                              (- ply 1) eval-fn))))
+                ;; (print-board board2)
+                ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
+                ;;     player ply val achievable cutoff move)
+                (when (> val achievable)
+                  (setf achievable val)
+                  (setf best-move move))))))))
+
+(defun alpha-beta-paip (player board achievable cutoff ply eval-fn)
+  (if (= ply 0)
+      (funcall eval-fn player board)
+      (let ((moves (legal-moves player board)))
+        ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
         (if (null moves)
             (if (null (legal-moves (opponent player) board))
                 (- (alpha-beta (opponent player) board
-                            (- cutoff) (- achievable)
-                            (- ply 1) eval-fn))
-                0) ;; do something useful here?
-            (do* ((best-move (car moves))
-                  (moves2 moves (cdr moves2))
-                  (move (car moves2) (car moves2))
-                  (board2 (make-move move (copy-board board)))
-                  (val (- (alpha-beta (opponent player) board2
-                                      (- cutoff) (- achievable)
-                                      (- ply 1) eval-fn))))
-                 ((or (null moves2) (>= achievable cutoff))
-                  (values achievable best-move))
-              (when (> val achievable)
-                (setf achievable val)
-                (setf best-move move)))))))
+                               (- cutoff) (- achievable)
+                               (- ply 1) eval-fn))
+                0)
+            (let ((best-move (first moves)))
+              (loop for move in moves do
+                (let* ((board2 (make-move move (copy-board board)))
+                       (val (- (alpha-beta3
+                                 (opponent player) board2
+                                 (- cutoff) (- achievable)
+                                 (- ply 1) eval-fn))))
+                  ;; (print-board board2)
+                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
+                  ;;     player ply val achievable cutoff move)
+                  (when (> val achievable)
+                    (setf achievable val)
+                    (setf best-move move)))
+                until (>= achievable cutoff))
+              (values achievable best-move))))))
 
 (defun alpha-beta-searcher (ply eval-fn)
   "A streatgy that searches PLY levels and then uses EVAL-FN."
@@ -78,6 +109,16 @@
           (alpha-beta player board
                       most-negative-fixnum most-positive-fixnum
                       ply eval-fn)
+        (declare (ignore value))
+        move)))
+
+(defun alpha-beta-search-paip (ply eval-fn)
+  "A streatgy that searches PLY levels and then uses EVAL-FN."
+  #'(lambda (player board)
+      (multiple-value-bind (value move)
+          (alpha-beta-paip player board
+                           most-negative-fixnum most-positive-fixnum
+                           ply eval-fn)
         (declare (ignore value))
         move)))
 
