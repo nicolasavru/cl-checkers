@@ -70,8 +70,8 @@
 (defun count-pieces (player board)
   "Count player's pieces."
   (+ (count (symbol-value (symb player '-man)) board)
-     ;; weight kings twice as much as pieces
-     (* 2 (count (symbol-value (symb player '-king)) board))))
+     ;; weight kings three times as much as pieces
+     (* 3 (count (symbol-value (symb player '-king)) board))))
 
 (defun count-difference (player board)
   "Count player's pieces minus opponent's pieces."

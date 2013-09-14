@@ -23,19 +23,19 @@
       (funcall eval-fn player board)
       (let ((moves (legal-moves player board)))
         (if (null moves)
-            (if (null (legal-moves (opponent player) board))
-                (- (minimax (opponent player) board
-                            (- ply 1) eval-fn))
-                0) ;; do something useful here?
+            most-negative-fixnum
             (let ((best-move nil)
                   (best-val nil))
               (dolist (move moves)
-                (let* ((board2 (make-move move (copy-board board)))
-                       (val (- (minimax (opponent player) board2 (- ply 1) eval-fn))))
-                  (when (or (null best-val)
-                            (> val best-val))
-                    (setf best-val val)
-                    (setf best-move move))))
+                (multiple-value-bind (board2 kingedp)
+                    (make-move move (copy-board board))
+                  (let* ((npl (next-player player move board2 kingedp))
+                         (val (funcall (if (eql npl player) #'+ #'-)
+                                       (minimax npl board2 (- ply 1) eval-fn))))
+                    (when (or (null best-val)
+                              (> val best-val))
+                      (setf best-val val)
+                      (setf best-move move)))))
               (values best-val best-move))))))
 
 (defun minimax-searcher (ply eval-fn)
@@ -54,26 +54,26 @@
       (let ((moves (legal-moves player board)))
         ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
         (if (null moves)
-            (if (null (legal-moves (opponent player) board))
-                (- (alpha-beta2 (opponent player) board
-                               (- cutoff) (- achievable)
-                               (- ply 1) eval-fn))
-                0)
-            (do* ((best-move (car moves))
+            most-negative-fixnum
+            (do* ((best-move (random-elt moves))
                   (moves2 moves (cdr moves2))
                   (move (car moves2) (car moves2)))
                  ((or (null move) (>= achievable cutoff)) (values achievable best-move))
-              (let* ((board2 (make-move move (copy-board board)))
-                     (val (- (alpha-beta3
-                              (opponent player) board2
-                              (- cutoff) (- achievable)
-                              (- ply 1) eval-fn))))
-                ;; (print-board board2)
-                ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
-                ;;     player ply val achievable cutoff move)
-                (when (> val achievable)
-                  (setf achievable val)
-                  (setf best-move move))))))))
+              (multiple-value-bind (board2 kingedp)
+                  (make-move move (copy-board board))
+                (let* ((npl (next-player player move board2 kingedp))
+                       (val (funcall (if (eql npl player) #'+ #'-)
+                                     (alpha-beta
+                                      npl board2
+                                      (funcall (if (eql npl player) #'+ #'-) cutoff)
+                                      (funcall (if (eql npl player) #'+ #'-) achievable)
+                                      (- ply 1) eval-fn))))
+                  ;; (print-board board2)
+                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
+                  ;;     player ply val achievable cutoff move)
+                  (when (> val achievable)
+                    (setf achievable val)
+                    (setf best-move move)))))))))
 
 (defun alpha-beta-paip (player board achievable cutoff ply eval-fn)
   (if (= ply 0)
@@ -82,17 +82,17 @@
         ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
         (if (null moves)
             (if (null (legal-moves (opponent player) board))
-                (- (alpha-beta (opponent player) board
-                               (- cutoff) (- achievable)
-                               (- ply 1) eval-fn))
+                (- (alpha-beta-paip (opponent player) board
+                                    (- cutoff) (- achievable)
+                                    (- ply 1) eval-fn))
                 0)
             (let ((best-move (first moves)))
               (loop for move in moves do
                 (let* ((board2 (make-move move (copy-board board)))
-                       (val (- (alpha-beta3
-                                 (opponent player) board2
-                                 (- cutoff) (- achievable)
-                                 (- ply 1) eval-fn))))
+                       (val (- (alpha-beta-paip
+                                (opponent player) board2
+                                (- cutoff) (- achievable)
+                                (- ply 1) eval-fn))))
                   ;; (print-board board2)
                   ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
                   ;;     player ply val achievable cutoff move)
@@ -101,6 +101,80 @@
                     (setf best-move move)))
                 until (>= achievable cutoff))
               (values achievable best-move))))))
+
+(defun alpha-beta-iterative-deepening (player board achievable cutoff ply end-time eval-fn)
+  "Find the best move for PLAYER according to EVAL-FN, searching PLY
+  levels deep. Don't call it with PLY 0."
+  (if (= ply 0)
+      (progn
+        ;; (format t "---------------------~%")
+        ;; (format t "Current position for player ~a has score: ~a~%" player (funcall eval-fn player board))
+        ;; (print-board board)
+        ;; (format t "---------------------~%")
+        (funcall eval-fn player board))
+      (let ((moves (legal-moves player board)))
+        ;; (format t "---------------------~%")
+        ;; (print-board board)
+        ;; (format t "player: ~a; ply: ~a; moves: ~a; ~%" player ply moves)
+        ;; (format t "---------------------~%")
+        (if (null moves)
+            most-negative-fixnum
+            (do* ((best-move (random-elt moves))
+                  (moves2 moves (cdr moves2))
+                  (move (car moves2) (car moves2)))
+                 ((or
+                   (null move)
+                   (>= achievable cutoff)
+                   (>= (get-internal-real-time) end-time)) ;; do a partial search if we have time
+                  (progn
+                   ;; (format t "player, ply, move, achievable, cutoff: ~a ~a ~a ~a ~a~%" player ply best-move achievable cutoff)
+                    (values achievable best-move (>= (get-internal-real-time) end-time))))
+              (multiple-value-bind (board2 kingedp)
+                  (make-move move (copy-board board))
+                (let* ((npl (next-player player move board2 kingedp))
+                       (val (funcall (if (eql npl player) #'+ #'-)
+                                     (alpha-beta-iterative-deepening
+                                      npl board2
+                                      (if (eql npl player) achievable (- cutoff))
+                                      (if (eql npl player) cutoff (- achievable))
+                                      (- ply 1) end-time eval-fn))))
+                  ;; (format t "---------------------")
+                  ;; (print-board board2)
+                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
+                  ;;     player ply val achievable cutoff move)
+                  (when (> val achievable)
+                    (setf achievable val)
+                    (setf best-move move)))))))))
+
+(defun alpha-beta-iterative-deepening-wrapper (player board time eval-fn)
+  (do ((move)
+       (val)
+       (start-time (get-internal-real-time))
+       (end-time (+ (get-internal-real-time) time))
+       (ply-start-time)
+       (time-to-search-ply 0)
+       (ply 3 (incf ply)))
+      ((or (>= time-to-search-ply (/ time 2))
+           (>= (get-internal-real-time) end-time)
+           (> ply 100))
+       (progn
+         (format t "~a searched ~a plys in ~a seconds.; ~a~%"
+                 player
+                 (1- ply)
+                 (float (/ (- (get-internal-real-time) start-time)
+                           internal-time-units-per-second))
+                 val)
+         move))
+    (setf ply-start-time (get-internal-real-time))
+    (multiple-value-bind (new-value new-move out-of-time-p)
+        (alpha-beta-iterative-deepening player board
+                    most-negative-fixnum most-positive-fixnum
+                    ply end-time eval-fn)
+      (setf time-to-search-ply (- (get-internal-real-time) ply-start-time))
+      (format t "~a searched ~a plys and found move ~a with val ~a.~%" player ply new-move new-value)
+      (unless out-of-time-p
+        (setf val new-value)
+        (setf move new-move)))))
 
 (defun alpha-beta-searcher (ply eval-fn)
   "A streatgy that searches PLY levels and then uses EVAL-FN."
@@ -122,6 +196,13 @@
         (declare (ignore value))
         move)))
 
+(defun alpha-beta-iterative-deepening-searcher (time eval-fn)
+  "A streatgy that searches for TIME seconds and then uses EVAL-FN."
+  #'(lambda (player board)
+      (alpha-beta-iterative-deepening-wrapper player board
+                                              (* time internal-time-units-per-second)
+                                              eval-fn)))
+
 (defun human (player board)
   "A human player for the game of Checkers"
   (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
@@ -131,4 +212,5 @@
 
 (defun random-strategy (player board)
   "Make any legal move."
+  (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
   (random-elt (legal-moves player board)))
