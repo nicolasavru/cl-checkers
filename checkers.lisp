@@ -221,28 +221,34 @@
               (warn "Illegal move: ~a" move)
               (get-move strategy player board :piece piece :type type))))))
 
-(defun checkers (black-strategy white-strategy &key (board (initial-board)) (print t))
+(defun checkers (black-strategy white-strategy
+                 &key (player-to-move 'black) (board (initial-board)) (print t))
   "Play a game of checkers. Return the victor (though not in a vector). "
-    (do* ((prev-player () player)
-          (player 'black (next-player player move board kingedp))
-          (strategy black-strategy (if (eql player 'black) black-strategy white-strategy))
-          (move (get-move strategy player board)
-                (apply #'get-move strategy player board
-                       (if (eql player prev-player)
-                           (progn (format t "DOUBLE JUMP~%") (force-output *standard-output*)
-                                  (list :piece (+ (car move) (cdr move))
-                                        :type all-jumps)))))
-          (kingedp (when move
-                     (multiple-value-bind (board kingedp)
-                         (make-move move board)
-                       (declare (ignore board))
-                       kingedp))
-                   (when move
-                     (multiple-value-bind (board kingedp)
-                         (make-move move board)
-                       (declare (ignore board))
-                       kingedp))))
-         ((null (legal-moves player board)) (opponent player))
-      (when (and move print)
-        (format t "Move ~a made by player ~a.~%Updated board:~%" move player)
-        (print-board board))))
+  (do* ((prev-player nil player)
+        (player player-to-move (next-player player move board kingedp))
+        (strategy (if (eql player 'black) black-strategy white-strategy)
+                  (if (eql player 'black) black-strategy white-strategy))
+        (move (get-move strategy player board)
+              (apply #'get-move strategy player board
+                     (if (eql player prev-player)
+                         (progn (format t "DOUBLE JUMP~%")
+                                (force-output *standard-output*)
+                                (list :piece (+ (car move) (cdr move))
+                                      :type all-jumps)))))
+        (kingedp (when move
+                   (multiple-value-bind (board kingedp)
+                       (make-move move board)
+                     (declare (ignore board))
+                     kingedp))
+                 (when move
+                   (multiple-value-bind (board kingedp)
+                       (make-move move board)
+                     (declare (ignore board))
+                     kingedp))))
+       ((null move)
+        (progn
+          (if print (format t "~%~a wins!~%" (opponent player)))
+          (opponent player)))
+    (when (and move print)
+      (format t "Move ~a made by player ~a.~%Updated board:~%" move player)
+      (print-board board))))

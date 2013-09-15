@@ -147,30 +147,27 @@
                     (setf best-move move)))))))))
 
 (defun alpha-beta-iterative-deepening-wrapper (player board time eval-fn)
-  (do ((move)
-       (val)
-       (start-time (get-internal-real-time))
-       (end-time (+ (get-internal-real-time) time))
-       (ply-start-time)
-       (time-to-search-ply 0)
-       (ply 3 (incf ply)))
-      ((or (>= time-to-search-ply (/ time 2))
-           (>= (get-internal-real-time) end-time)
-           (> ply 100))
-       (progn
-         (format t "~a searched ~a plys in ~a seconds.; ~a~%"
-                 player
-                 (1- ply)
-                 (float (/ (- (get-internal-real-time) start-time)
-                           internal-time-units-per-second))
-                 val)
-         move))
-    (setf ply-start-time (get-internal-real-time))
+  (do* ((moves (legal-moves player board))
+        (move (car moves))
+        (val)
+        (start-time (get-internal-real-time))
+        (end-time (+ (get-internal-real-time) time))
+        (ply 3 (incf ply)))
+       ((or (>= (get-internal-real-time) end-time)
+            (> ply 100)
+            (= (length moves) 1)) ;; if we only have one move, just play it
+        (progn
+          (format t "~a searched ~a plys in ~a seconds and found move ~a with val ~a.;~%"
+                  player
+                  (- ply 2)
+                  (float (/ (- (get-internal-real-time) start-time)
+                            internal-time-units-per-second))
+                  move val)
+          move))
     (multiple-value-bind (new-value new-move out-of-time-p)
         (alpha-beta-iterative-deepening player board
                     most-negative-fixnum most-positive-fixnum
                     ply end-time eval-fn)
-      (setf time-to-search-ply (- (get-internal-real-time) ply-start-time))
       (format t "~a searched ~a plys and found move ~a with val ~a.~%" player ply new-move new-value)
       (unless out-of-time-p
         (setf val new-value)
