@@ -6,4 +6,4 @@
 (defparameter b (initial-board))
 (print-board b)
 ;; (checkers #'random-strategy #'human)
-(checkers (minimax-search 3 #'count-difference)  #'random-strategy)
+(checkers (alpha-beta-searcher 3 #'count-difference)  #'random-strategy)

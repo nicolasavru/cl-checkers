@@ -9,6 +9,7 @@
                #:split-sequence)
   :components ((:file "package")
                (:file "utils")
+               (:file "commands")
                (:file "checkers")
                (:file "strategies")
                (:file "checkers-tests")))

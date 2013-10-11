@@ -210,16 +210,22 @@
   check for legality). Keep calling until a legal move is made. Return
   NIL if there are no valid movies."
   (let* ((moves (legal-moves player board :piece piece :type type))
-         (move (if moves (funcall strategy player (copy-board board)))))
+         (move (if moves (funcall strategy player (copy-board board))))
+         (command (symb (car move) '-command)))
     (if (null moves)
         nil
-        (if (member move moves :test #'equal)
-            move
+        (if (member command *command-list*)
             (progn
-              ;; (print moves)
-              ;; (print (list move player board piece type))
-              (warn "Illegal move: ~a" move)
-              (get-move strategy player board :piece piece :type type))))))
+              (apply command :board board (cdr move))
+              (force-output *standard-output*)
+              (get-move strategy player board :piece piece :type type))
+            (if (member move moves :test #'equal)
+                move
+                (progn
+                  ;; (print moves)
+                  ;; (print (list move player board piece type))
+                  (warn "Illegal move or unknown command: ~a" move)
+                  (get-move strategy player board :piece piece :type type)))))))
 
 (defun checkers (black-strategy white-strategy
                  &key (player-to-move 'black) (board (initial-board)) (print t))

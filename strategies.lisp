@@ -203,7 +203,7 @@
 (defun human (player board)
   "A human player for the game of Checkers"
   (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
-  (format *query-io* "[Move]$ ")
+  (format *query-io* "cl-checkers$ ")
   (force-output *query-io*)
   (read *query-io*))
 
