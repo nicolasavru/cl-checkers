@@ -94,11 +94,6 @@
      ;; weight kings three times as much as pieces
      (* 3 (count (symbol-value (symb player '-king)) board))))
 
-(defun count-difference (player board)
-  "Count player's pieces minus opponent's pieces."
-  (- (count-pieces player board)
-     (count-pieces (opponent player) board)))
-
 (defun initial-board ()
   "Return a board with initial positions of both players"
   ;; Boards are 100-element vectors with elements

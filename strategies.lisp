@@ -1,5 +1,26 @@
 (in-package #:checkers)
 
+(defun piece-difference (player board)
+  "Count player's pieces minus opponent's pieces."
+  (- (count-pieces player board)
+     (count-pieces (opponent player) board)))
+
+(defun piece-ratio (player board)
+  "Count player's pieces divided by opponent's pieces."
+  (/ (count-pieces player board)
+     (count-pieces (opponent player) board)))
+
+(defun aggregate-eval-fun (player board)
+  (let ((dif (piece-difference player board))
+        (rat (piece-ratio player board)))
+    (+
+     ;; maximize piece difference
+     dif
+     ;; trade pieces (maximize rat) if up in pieces
+     (* (if (>= dif 0) 1 -1) rat)
+     ;; TODO: proximity function for king moves
+     )))
+
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply
   EVAL-FN to each resulting board, and choose the move for which
