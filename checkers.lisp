@@ -11,20 +11,51 @@
 (defparameter all-steps '(-11 -9 9 11))
 (defparameter all-jumps '(-22 -18 18 22))
 
-(defconstant empty 0 "An empty square")
-(defconstant black-man 1 "A black man")
-(defconstant black-king 2 "A black king")
-(defconstant white-man 3 "A white man")
-(defconstant white-king 4 "A white king")
-(defconstant outer 5 "Marks squares outside the 8x8 board")
+(defconstant empty 0)
+(setf (get 'empty 'str) ".")
+(defconstant black-man 1)
+(setf (get 'black-man 'fg) :red)
+(setf (get 'black-man 'str) "b")
+(defconstant black-king 2)
+(setf (get 'black-king 'fg) :red)
+(setf (get 'black-king 'str) "B")
+(defconstant white-man 3)
+(setf (get 'white-man 'fg) :white)
+(setf (get 'white-man 'str) "w")
+(defconstant white-king 4)
+(setf (get 'white-king 'fg) :white)
+(setf (get 'white-king 'str) "W")
+(defconstant outer 5)
+(setf (get 'outer 'str) "O")
 
 (deftype piece () `(integer ,empty ,outer))
 (deftype player-piece () `(integer ,black-man ,white-king))
 (deftype black-piece () `(integer ,black-man ,black-king))
 (deftype white-piece () `(integer ,white-man ,white-king))
 
-(defun char-of (piece) (char ".bBwW0" piece))
-(defun symb-of (piece) (nth piece '(empty black-man black-king white-man white-king outer)))
+(defparameter piece-alist-list
+  (list
+   '((symb . empty)      (str . "."))
+   '((symb . black-man)  (str . "b") (fg . :red))
+   '((symb . black-king) (str . "B") (fg . :red))
+   '((symb . white-man)  (str . "w") (fg . :white))
+   '((symb . white-king) (str . "W") (fg . :white))
+   '((symb . outer)      (str . "O")))
+  "List of alists containing properties for each piece type.")
+
+(defun alist-of (piece)
+  "Return alist associated with PIECE."
+  (nth piece piece-alist-list))
+
+(defun symb-of (piece)
+  "Return a symbol representing PIECE."
+  (cdr (assoc 'symb (alist-of piece))))
+
+(defun string-of (piece)
+  "Return a string representing PIECE."
+  (let ((piece-alist (alist-of piece)))
+    (color-string (cdr (assoc 'str piece-alist))
+                  :fg (cdr (assoc 'fg piece-alist)))))
 
 (defun opponent (player) (if (eql player 'black) 'white 'black))
 
@@ -101,7 +132,7 @@
   (dotimes (row 8)
     (format t "~& ~d " (* 10 (1+ row)))
     (dotimes (col 8)
-      (format t "~c " (char-of (bref board (+ (* 10 (1+ row)) (1+ col)))))))
+      (format t "~A "  (string-of (bref board (+ (* 10 (1+ row)) (1+ col)))))))
   (format t "~2&"))
 
 (defun valid-p (move)
