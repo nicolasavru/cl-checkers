@@ -6,4 +6,5 @@
 (defparameter b (initial-board))
 (print-board b)
 ;; (checkers #'random-strategy #'human)
-(checkers (alpha-beta-searcher 3 #'aggregate-eval-fun) #'random-strategy)
+(checkers (alpha-beta-iterative-deepening-searcher 1 #'aggregate-eval-fun)
+          (alpha-beta-iterative-deepening-searcher 1 #'piece-difference))

@@ -1,24 +1,98 @@
 (in-package #:checkers)
 
+(defun count-pieces (player board)
+  "Count player's pieces."
+  (+ (count (symbol-value (symb player '-man)) board)
+     ;; weight kings two times as much as pieces
+     (* 2 (count (symbol-value (symb player '-king)) board))))
+
 (defun piece-difference (player board)
   "Count player's pieces minus opponent's pieces."
   (- (count-pieces player board)
      (count-pieces (opponent player) board)))
 
+(defun row-weight-fun (pos-piece)
+  "Return row weight associated with piece."
+  (let ((row (floor (car pos-piece) 10))
+        (piece (cdr pos-piece)))
+    (cond
+      ((= piece black-man) row)
+      ((= piece white-man) (- 9 row))
+      (t 0))))
+
+(defun piece-value (piece)
+  "Return intrinsic value of piece."
+  ;; A man on the last rank should equal a king.
+  (cond
+    ((= piece black-man) 10)
+    ((= piece white-man) 10)
+    ((= piece black-king) 18)
+    ((= piece white-king) 18)
+    (t 0)))
+
+(defun proximity-weight-fun (pos-piece board)
+  "Weight piece proportional to its proximity to enemy pieces."
+  (multiple-value-bind (row col)
+      (floor (car pos-piece) 10)
+    (let* ((player (if (typep (cdr pos-piece) 'black-piece) 'black 'white))
+           (num-pieces (length (player-pieces player board)))
+           (enemy-pos-pieces (player-pieces (opponent player) board))
+           (distances (mapcar #'(lambda (enpos)
+                                  (multiple-value-bind (enrow encol)
+                                      (floor enpos 10)
+                                    (+ (expt (- row enrow) 2)
+                                       (expt (- col encol) 2))
+                                    ))
+                              (mapcar #'car enemy-pos-pieces)))
+           (sd (float (/ (apply #'+ 1 distances) (+ num-pieces (length enemy-pos-pieces))))))
+      (if (> sd 2)
+          (/ 48.0 sd)
+          24))))
+
+(defun total-piece-value (pos-piece board)
+  "Return total value associated with piece."
+  ;; (let ((prox(if (or (eql (cdr pos-piece) black-king)
+  ;;                    (eql (cdr pos-piece) white-king))
+  ;;                (proximity-weight-fun pos-piece board)
+  ;;                0)))
+  ;;   (if (> prox 1)
+  ;;       (format t "~a, ~a, ~a~%"
+  ;;               (piece-value (cdr pos-piece))
+  ;;               (row-weight-fun pos-piece)
+  ;;               (if (or (eql (cdr pos-piece) black-king)
+  ;;                       (eql (cdr pos-piece) white-king))
+  ;;                   (proximity-weight-fun pos-piece board)
+  ;;                   0))))
+
+  (+ (piece-value (cdr pos-piece))
+     (row-weight-fun pos-piece)
+     (if (or (eql (cdr pos-piece) black-king)
+             (eql (cdr pos-piece) white-king))
+         (proximity-weight-fun pos-piece board)
+         0)
+     ))
+
+(defun weighted-piece-difference (player board)
+  "Count player's pieces minus opponent's pieces."
+  (let ((player-pos-pieces (player-pieces player board))
+        (opponent-pos-pieces (player-pieces (opponent player) board)))
+    (- (apply #'+ (mapcar #'(lambda (pos-piece) (total-piece-value pos-piece board)) player-pos-pieces))
+       (apply #'+ (mapcar #'(lambda (pos-piece) (total-piece-value pos-piece board)) opponent-pos-pieces)))))
+
 (defun piece-ratio (player board)
   "Count player's pieces divided by opponent's pieces."
-  (/ (count-pieces player board)
-     (count-pieces (opponent player) board)))
+  (/ (float (count-pieces player board))
+     (float (count-pieces (opponent player) board))))
 
 (defun aggregate-eval-fun (player board)
-  (let ((dif (piece-difference player board))
+  (let ((dif (weighted-piece-difference player board))
         (rat (piece-ratio player board)))
+    ;; (if (> (* 10 rat) 11)(format t "~a~%" (* 10 rat)))
     (+
      ;; maximize piece difference
      dif
      ;; trade pieces (maximize rat) if up in pieces
-     (* (if (>= dif 0) 1 -1) rat)
-     ;; TODO: proximity function for king moves
+     (* (if (>= dif 0) 10 -10) rat)
      )))
 
 (defun maximizer (eval-fn)
@@ -96,33 +170,6 @@
                     (setf achievable val)
                     (setf best-move move)))))))))
 
-(defun alpha-beta-paip (player board achievable cutoff ply eval-fn)
-  (if (= ply 0)
-      (funcall eval-fn player board)
-      (let ((moves (legal-moves player board)))
-        ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
-        (if (null moves)
-            (if (null (legal-moves (opponent player) board))
-                (- (alpha-beta-paip (opponent player) board
-                                    (- cutoff) (- achievable)
-                                    (- ply 1) eval-fn))
-                0)
-            (let ((best-move (first moves)))
-              (loop for move in moves do
-                (let* ((board2 (make-move move (copy-board board)))
-                       (val (- (alpha-beta-paip
-                                (opponent player) board2
-                                (- cutoff) (- achievable)
-                                (- ply 1) eval-fn))))
-                  ;; (print-board board2)
-                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
-                  ;;     player ply val achievable cutoff move)
-                  (when (> val achievable)
-                    (setf achievable val)
-                    (setf best-move move)))
-                until (>= achievable cutoff))
-              (values achievable best-move))))))
-
 (defun alpha-beta-iterative-deepening (player board achievable cutoff ply end-time eval-fn)
   "Find the best move for PLAYER according to EVAL-FN, searching PLY
   levels deep. Don't call it with PLY 0."
@@ -146,7 +193,7 @@
                  ((or
                    (null move)
                    (>= achievable cutoff)
-                   (>= (get-internal-real-time) end-time)) ;; do a partial search if we have time
+                   (>= (get-internal-real-time) end-time))
                   (progn
                    ;; (format t "player, ply, move, achievable, cutoff: ~a ~a ~a ~a ~a~%" player ply best-move achievable cutoff)
                     (values achievable best-move (>= (get-internal-real-time) end-time))))
@@ -201,16 +248,6 @@
           (alpha-beta player board
                       most-negative-fixnum most-positive-fixnum
                       ply eval-fn)
-        (declare (ignore value))
-        move)))
-
-(defun alpha-beta-search-paip (ply eval-fn)
-  "A streatgy that searches PLY levels and then uses EVAL-FN."
-  #'(lambda (player board)
-      (multiple-value-bind (value move)
-          (alpha-beta-paip player board
-                           most-negative-fixnum most-positive-fixnum
-                           ply eval-fn)
         (declare (ignore value))
         move)))
 

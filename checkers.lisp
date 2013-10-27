@@ -88,11 +88,15 @@
 (defparameter white-kingrow (nth-row-squares 1))
 (defparameter black-kingrow (nth-row-squares 8))
 
-(defun count-pieces (player board)
-  "Count player's pieces."
-  (+ (count (symbol-value (symb player '-man)) board)
-     ;; weight kings three times as much as pieces
-     (* 3 (count (symbol-value (symb player '-king)) board))))
+(defun player-pieces (player board)
+  "Return a list of (POS . PIECE) cons cells."
+  (do ((len (length board))
+       (pos 0 (1+ pos))
+       (res))
+      ((= pos len) res)
+    (let ((piece (bref board pos)))
+      (if (typep piece (symb player '-piece))
+          (push (cons pos piece) res)))))
 
 (defun initial-board ()
   "Return a board with initial positions of both players"
@@ -240,7 +244,7 @@
                 (progn
                   ;; (print moves)
                   ;; (print (list move player board piece type))
-                  (warn "Illegal move or unknown command: ~a" move)
+                  (warn "Illegal move or unknown command: ~a~%Moves: ~a" move moves)
                   (get-move strategy player board :piece piece :type type)))))))
 
 (defun checkers (black-strategy white-strategy
