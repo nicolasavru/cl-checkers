@@ -105,7 +105,7 @@
   (let* ((board (make-array 100 :element-type 'piece :initial-element outer))
          (black-starting-squares
            (subseq black-squares 0 12))
-        (white-starting-squares
+         (white-starting-squares
            (subseq black-squares (- (length black-squares) 12))))
     (dolist (square all-squares)
       (setf (bref board square) empty))
@@ -113,6 +113,23 @@
       (setf (bref board square) black-man))
     (dolist (square white-starting-squares)
       (setf (bref board square) white-man))
+    board))
+
+(defun load-board (filename)
+  (let ((in (open filename))
+        (input-squares)
+        (i 0)
+        (board (make-array 100 :element-type 'piece :initial-element outer)))
+    (dotimes (row 8)
+      (let ((line (string-trim '(#\Return) (read-line in))))
+        (setf input-squares
+              (nconc input-squares
+                     (read-from-string (concatenate 'string "(" line ")"))))))
+    (dolist (square all-squares)
+      (setf (bref board square) empty))
+    (dolist (square black-squares)
+      (setf (bref board square) (elt input-squares i))
+      (incf i))
     board))
 
 (defun print-board (board)
