@@ -21,11 +21,11 @@
 (deftype piece () `(integer ,empty ,outer))
 
 (defstruct boardt
-  (squares (make-array 100 :element-type 'piece :initial-element outer))
-  (num-black-men 12)
-  (num-black-kings 0)
-  (num-white-men 12)
-  (num-white-kings 0))
+  (squares (make-array 100 :element-type 'piece :initial-element outer) :type (vector piece))
+  (num-black-men 12 :type fixnum)
+  (num-black-kings 0 :type fixnum)
+  (num-white-men 12 :type fixnum)
+  (num-white-kings 0 :type fixnum))
 
 (defparameter piece-alist-list
   (list
