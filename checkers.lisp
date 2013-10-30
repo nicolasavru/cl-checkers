@@ -19,9 +19,13 @@
 (defconstant outer 5)
 
 (deftype piece () `(integer ,empty ,outer))
-(deftype player-piece () `(integer ,black-man ,white-king))
-(deftype black-piece () `(integer ,black-man ,black-king))
-(deftype white-piece () `(integer ,white-man ,white-king))
+
+(defstruct boardt
+  (squares (make-array 100 :element-type 'piece :initial-element outer))
+  (num-black-men 12)
+  (num-black-kings 0)
+  (num-white-men 12)
+  (num-white-kings 0))
 
 (defparameter piece-alist-list
   (list
@@ -58,14 +62,19 @@
       player
       (opponent player)))
 
-(deftype board () '(simple-array piece (100)))
+(deftype boardarr () '(simple-array piece (100)))
 
 (defun bref (board square) (aref board square))
 (defsetf bref (board square) (val)
   `(setf (aref ,board ,square) ,val))
 
+(defun copy-squares (squares)
+  (copy-seq squares))
+
 (defun copy-board (board)
-  (copy-seq board))
+  (let ((new-board (copy-boardt board)))
+    (setf (boardt-squares new-board) (copy-squares (boardt-squares board)))
+    new-board))
 
 (defparameter all-squares
   (do ((i 11 (1+ i))
@@ -90,29 +99,32 @@
 
 (defun player-pieces (player board)
   "Return a list of (POS . PIECE) cons cells."
-  (do ((len (length board))
+  (do ((len (length (boardt-squares board)))
        (pos 0 (1+ pos))
        (res))
       ((= pos len) res)
-    (let ((piece (bref board pos)))
-      (if (typep piece (symb player '-piece))
+    (let ((piece (bref (boardt-squares board) pos)))
+      ;; (if (typep piece (symb player '-piece))
+      (if (member piece (if (eql player 'black)
+                            (list black-man black-king)
+                            (list white-man white-king)))
           (push (cons pos piece) res)))))
 
 (defun initial-board ()
   "Return a board with initial positions of both players"
   ;; Boards are 100-element vectors with elements
   ;; (<= 1 (mod 11-88 10) 8) used and the others marked with the sentinel OUTER.
-  (let* ((board (make-array 100 :element-type 'piece :initial-element outer))
+  (let* ((board (make-boardt))
          (black-starting-squares
            (subseq black-squares 0 12))
          (white-starting-squares
            (subseq black-squares (- (length black-squares) 12))))
     (dolist (square all-squares)
-      (setf (bref board square) empty))
+      (setf (bref (boardt-squares board) square) empty))
     (dolist (square black-starting-squares)
-      (setf (bref board square) black-man))
+      (setf (bref (boardt-squares board) square) black-man))
     (dolist (square white-starting-squares)
-      (setf (bref board square) white-man))
+      (setf (bref (boardt-squares board) square) white-man))
     board))
 
 (defun load-board (filename)
@@ -126,9 +138,9 @@
               (nconc input-squares
                      (read-from-string (concatenate 'string "(" line ")"))))))
     (dolist (square all-squares)
-      (setf (bref board square) empty))
+      (setf (bref (boardt-squares board) square) empty))
     (dolist (square black-squares)
-      (setf (bref board square) (elt input-squares i))
+      (setf (bref (boardt-squares board) square) (elt input-squares i))
       (incf i))
     board))
 
@@ -138,7 +150,7 @@
   (dotimes (row 8)
     (format t "~& ~d " (* 10 (1+ row)))
     (dotimes (col 8)
-      (format t "~A "  (string-of (bref board (+ (* 10 (1+ row)) (1+ col)))))))
+      (format t "~A "  (string-of (bref (boardt-squares board) (+ (* 10 (1+ row)) (1+ col)))))))
   (format t "~2&"))
 
 (defun valid-p (move)
@@ -163,29 +175,46 @@
   6) if SRC is a BLACK- (WHITE-) KING, VEC is a STEP or
        VEC is a JUMP and the piece being jumped over is white (black)
  "
-  ;; (print (list move player board piece type))
   (let* ((src (car move))
          (vec (cdr move))
          (dst (+ src vec))
-         (p (bref board src))
-         (d (bref board dst))
-         (split-piece (split-sequence #\- (symbol-name (symb-of p))))
-         (piece-owner (symb (car split-piece)))
-         (piece-type (symb (cadr split-piece))))
-    (flet ((test-vec (piece-owner piece-type vec)
+         (p (bref (boardt-squares board) src))
+         (d (bref (boardt-squares board) dst))
+         )
+    (flet ((test-vec (p vec)
              "Test if vec is a valid move for PIECE-OWNER's piece of type PIECE-TYPE"
-             (cond ((member vec
-                            (symbol-value (symb (if (eql piece-type 'king) 'all piece-owner) '-steps)))
-                    t)
-                   ((member vec
-                            (symbol-value (symb (if (eql piece-type 'king) 'all piece-owner) '-jumps)))
-                    (typep (bref board (+ (/ vec 2) src)) (symb (opponent piece-owner) '-piece)))
+             (cond ((= p black-man)
+                    (cond ((member vec black-steps) t)
+                          ((member vec black-jumps)
+                           (member (bref (boardt-squares board) (+ (/ vec 2) src))
+                                   (list white-man white-king)))
+                          (t nil)))
+                   ((= p black-king)
+                    (cond ((member vec all-steps) t)
+                          ((member vec all-jumps)
+                           (member (bref (boardt-squares board) (+ (/ vec 2) src))
+                                   (list white-man white-king)))
+                          (t nil)))
+                   ((= p white-man)
+                    (cond ((member vec white-steps) t)
+                          ((member vec white-jumps)
+                           (member (bref (boardt-squares board) (+ (/ vec 2) src))
+                                   (list black-man black-king)))
+                          (t nil)))
+                   ((= p white-king)
+                    (cond ((member vec all-steps) t)
+                          ((member vec all-jumps)
+                           (member (bref (boardt-squares board) (+ (/ vec 2) src))
+                                   (list black-man black-king)))
+                          (t nil)))
                    (t nil))))
-      (and (typep p (if (eql player 'black) 'black-piece 'white-piece))
+      (and (member p (if (eql player 'black)
+                         (list black-man black-king)
+                         (list white-man white-king)))
            (eql d empty)
            (if piece (eql src piece) t)
            (if type (member vec type) t)
-           (test-vec piece-owner piece-type vec)))))
+           (test-vec p vec)))))
 
 (defun legal-piece-moves (pos player board &key (type (append all-steps all-jumps)))
   "Return legal moves of TYPE for PLAYER for piece at POS on BOARD."
@@ -200,12 +229,14 @@
   "Return all potential legal moves for PLAYER on BOARD. If PIECE or TYPE
   is spcified, return moves only for that piece and only of that type."
   (let ((result ())
-        (player-piece-type (if (eql player 'black) 'black-piece 'white-piece)))
+        (player-piece-type (if (eql player 'black)
+                               (list black-man black-king)
+                               (list white-man white-king))))
     (if piece
         (mapcar #'(lambda (vec) (cons piece vec))
                       (legal-piece-moves piece player board :type type))
         (dolist (square black-squares result)
-          (when (typep (bref board square) player-piece-type)
+          (when (member (bref (boardt-squares board) square) player-piece-type)
             (setf result (append (mapcar #'(lambda (vec) (cons square vec))
                                          (legal-piece-moves square player board
                                                             :type type)) result)))))))
@@ -226,19 +257,26 @@
          (values white-king t))
         (t (values piece nil))))
 
-(defun make-move (move board)
+(defun make-move (player move board)
   "Update BOARD to reflect move by player. Assume MOVE is
   legal. Return the updated board and T if a piece was kinged, else
   NIL."
   (let* ((src (car move))
          (vec (cdr move))
          (dst (+ src vec)))
-    ;; (print move)
-    (multiple-value-bind (res-piece kingedp) (king-maybe (bref board src) dst)
-      (setf (bref board dst) res-piece)
-      (setf (bref board src) empty)
+    (multiple-value-bind (res-piece kingedp) (king-maybe (bref (boardt-squares board) src) dst)
+      (setf (bref (boardt-squares board) dst) res-piece)
+      (setf (bref (boardt-squares board) src) empty)
       (if (member vec all-jumps)
-          (setf (bref board (+ (/ vec 2) src)) empty))
+          (setf (bref (boardt-squares board) (+ (/ vec 2) src)) empty))
+      (if kingedp
+          (progn
+            (if (eql player 'black)
+                (incf (boardt-num-black-kings board))
+                (incf (boardt-num-white-kings board)))
+            (if (eql player 'black)
+                (decf (boardt-num-black-men board))
+                (decf (boardt-num-white-men board)))))
       (values board kingedp))))
 
 (defun get-move (strategy player board &key piece (type (append all-steps all-jumps)))
@@ -280,12 +318,12 @@
                                       :type all-jumps)))))
         (kingedp (when move
                    (multiple-value-bind (board kingedp)
-                       (make-move move board)
+                       (make-move player move board)
                      (declare (ignore board))
                      kingedp))
                  (when move
                    (multiple-value-bind (board kingedp)
-                       (make-move move board)
+                       (make-move player move board)
                      (declare (ignore board))
                      kingedp))))
        ((null move)

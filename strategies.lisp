@@ -1,13 +1,12 @@
 (in-package #:checkers)
 
 (defun count-pieces (player board)
-  "Count player's pieces."
-  (+ (count (symbol-value (symb player '-man)) board)
-     ;; weight kings two times as much as pieces
-     (* 2 (count (symbol-value (symb player '-king)) board))))
+  "Count PLAYER's pieces."
+  (+ (if (eql player 'black) (boardt-num-black-men board) (boardt-num-white-men board))
+     (if (eql player 'black) (boardt-num-black-kings board) (boardt-num-white-kings board))))
 
 (defun piece-difference (player board)
-  "Count player's pieces minus opponent's pieces."
+  "Count PLAYER's pieces minus opponent's pieces."
   (- (count-pieces player board)
      (count-pieces (opponent player) board)))
 
@@ -30,26 +29,25 @@
     ((= piece white-king) 18)
     (t 0)))
 
-(defun proximity-weight-fun (pos-piece board)
+(defun proximity-weight-fun (pos-piece player board)
   "Weight piece proportional to its proximity to enemy pieces."
   (multiple-value-bind (row col)
       (floor (car pos-piece) 10)
-    (let* ((player (if (typep (cdr pos-piece) 'black-piece) 'black 'white))
-           (num-pieces (length (player-pieces player board)))
+    (let* ((num-pieces (length (player-pieces player board)))
            (enemy-pos-pieces (player-pieces (opponent player) board))
-           (distances (mapcar #'(lambda (enpos)
-                                  (multiple-value-bind (enrow encol)
-                                      (floor enpos 10)
-                                    (+ (expt (- row enrow) 2)
-                                       (expt (- col encol) 2))
-                                    ))
-                              (mapcar #'car enemy-pos-pieces)))
-           (sd (float (/ (apply #'+ 1 distances) (+ num-pieces (length enemy-pos-pieces))))))
+           (sd (float (/ (+ 1 (reduce #'+ (mapcar #'car enemy-pos-pieces)
+                                      :key #'(lambda (enpos)
+                                               (multiple-value-bind (enrow encol)
+                                                   (floor enpos 10)
+                                                 (+ (expt (- row enrow) 2)
+                                                    (expt (- col encol) 2))))
+                                      :initial-value 0))
+                         (+ num-pieces (length enemy-pos-pieces))))))
       (if (> sd 2)
-          (/ 48.0 sd)
-          24))))
+          (/ 24.0 sd)
+          12))))
 
-(defun total-piece-value (pos-piece board)
+(defun total-piece-value (pos-piece player board)
   "Return total value associated with piece."
   ;; (let ((prox(if (or (eql (cdr pos-piece) black-king)
   ;;                    (eql (cdr pos-piece) white-king))
@@ -68,29 +66,39 @@
      (row-weight-fun pos-piece)
      (if (or (eql (cdr pos-piece) black-king)
              (eql (cdr pos-piece) white-king))
-         (proximity-weight-fun pos-piece board)
-         0)
-     ))
+         (proximity-weight-fun pos-piece player board)
+         0)))
 
-(defun weighted-piece-difference (player board)
+(defun weighted-piece-difference (player board value-fun)
   "Count player's pieces minus opponent's pieces."
   (let ((player-pos-pieces (player-pieces player board))
         (opponent-pos-pieces (player-pieces (opponent player) board)))
-    (- (apply #'+ (mapcar #'(lambda (pos-piece) (total-piece-value pos-piece board)) player-pos-pieces))
-       (apply #'+ (mapcar #'(lambda (pos-piece) (total-piece-value pos-piece board)) opponent-pos-pieces)))))
+    (- (reduce #'+ player-pos-pieces
+               :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
+               :initial-value 0)
+       (reduce #'+ opponent-pos-pieces
+               :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
+               :initial-value 0))))
 
 (defun piece-ratio (player board)
   "Count player's pieces divided by opponent's pieces."
   (/ (float (count-pieces player board))
      (float (count-pieces (opponent player) board))))
 
+(defun simple-eval-fun (player board)
+  (weighted-piece-difference
+   player
+   board
+   #'(lambda (pos-piece player board) (piece-value (cdr pos-piece)))))
+
+
 (defun aggregate-eval-fun (player board)
-  (let ((dif (weighted-piece-difference player board))
+  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
+        (dif (piece-difference player board))
         (rat (piece-ratio player board)))
-    ;; (if (> (* 10 rat) 11)(format t "~a~%" (* 10 rat)))
     (+
-     ;; maximize piece difference
-     dif
+     ;; maximize piece value difference
+     wdif
      ;; trade pieces (maximize rat) if up in pieces
      (* (if (>= dif 0) 10 -10) rat)
      )))
@@ -104,9 +112,9 @@
   #'(lambda (player board)
       (let* ((moves (legal-moves player board))
              (scores (mapcar (lambda (move)
-                               (make-move move board)
+                               (make-move player move board)
                                (funcall eval-fn player
-                                        (make-move move (copy-board board))))
+                                        (make-move player move (copy-boardt board))))
                              moves))
              (best (apply #'max scores)))
         (elt moves (position best scores)))))
@@ -123,7 +131,7 @@
                   (best-val nil))
               (dolist (move moves)
                 (multiple-value-bind (board2 kingedp)
-                    (make-move move (copy-board board))
+                    (make-move player move (copy-boardt board))
                   (let* ((npl (next-player player move board2 kingedp))
                          (val (funcall (if (eql npl player) #'+ #'-)
                                        (minimax npl board2 (- ply 1) eval-fn))))
@@ -155,7 +163,7 @@
                   (move (car moves2) (car moves2)))
                  ((or (null move) (>= achievable cutoff)) (values achievable best-move))
               (multiple-value-bind (board2 kingedp)
-                  (make-move move (copy-board board))
+                  (make-move player move (copy-boardt board))
                 (let* ((npl (next-player player move board2 kingedp))
                        (val (funcall (if (eql npl player) #'+ #'-)
                                      (alpha-beta
@@ -198,7 +206,7 @@
                    ;; (format t "player, ply, move, achievable, cutoff: ~a ~a ~a ~a ~a~%" player ply best-move achievable cutoff)
                     (values achievable best-move (>= (get-internal-real-time) end-time))))
               (multiple-value-bind (board2 kingedp)
-                  (make-move move (copy-board board))
+                  (make-move player move (copy-board board))
                 (let* ((npl (next-player player move board2 kingedp))
                        (val (funcall (if (eql npl player) #'+ #'-)
                                      (alpha-beta-iterative-deepening
