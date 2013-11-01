@@ -6,9 +6,11 @@
   :author "Nicolas Avrutin <nicolasavru@gmail.com>"
   :license "Specify license here"
   :depends-on (#:lisp-unit
-               #:split-sequence)
+               #:split-sequence
+               #:cffi)
   :components ((:file "package")
                (:file "utils")
+               (:file "dblookup")
                (:file "commands")
                (:file "checkers")
                (:file "strategies")
