@@ -13,14 +13,17 @@
 (defun computer-strategy (time)
   (alpha-beta-iterative-deepening-searcher time #'aggregate-eval-fun))
 
+(defun computer-strategy2 (time)
+  (alpha-beta-iterative-deepening-searcher time #'simple-eval-fun))
+
 (defun human-wrapper (time)
   (declare (ignore time))
   #'human)
 
-
-(defparameter *black-computer-p* (y-or-n-p "Is black player a computer?"))
-(defparameter *white-computer-p* (y-or-n-p "Is white player a computer?"))
-
+;; configuration
+(defparameter *xscale* 1)
+(defparameter *yscale* 1)
+(defparameter *debug* nil)
 (defparameter piece-alist-list
   (list
    '((str . "."))
@@ -30,6 +33,9 @@
    '((str . "W") (fg . :white))
    '((str . "O")))
   "List of alists containing properties for each piece type.")
+
+(defparameter *black-computer-p* (y-or-n-p "Is black player a computer?"))
+(defparameter *white-computer-p* (y-or-n-p "Is white player a computer?"))
 
 (require :sb-sprof)
 (sb-sprof:with-profiling (:max-samples 10000
@@ -50,12 +56,12 @@
       (setf time (read *query-io*))
       (checkers
        (if *black-computer-p* (computer-strategy time) #'human)
-       (if *white-computer-p* (computer-strategy time) #'human))))
+       (if *white-computer-p* (computer-strategy time) #'human)
+       )))
 )
 
 
 ;; (checkers (alpha-beta-iterative-deepening-searcher 1 #'aggregate-eval-fun)
-;;           (alpha-beta-iterative-deepening-searcher 1 #'simple-eval-fun)
-;;           :board b)
+;;           (alpha-beta-iterative-deepening-searcher 1 #'simple-eval-fun))
 
 (sb-ext:exit)

@@ -21,69 +21,79 @@
 
 (defun piece-value (piece)
   "Return intrinsic value of piece."
-  ;; A man on the last rank should equal a king.
   (cond
     ((= piece black-man) 15)
     ((= piece white-man) 15)
-    ((= piece black-king) 25)
-    ((= piece white-king) 25)
+    ((= piece black-king) 30)
+    ((= piece white-king) 30)
     (t 0)))
 
 (defun proximity-weight-fun (pos-piece player board)
   "Weight piece proportional to its proximity to enemy pieces."
   (multiple-value-bind (row col)
       (floor (car pos-piece) 10)
-    (let* ((num-kings (if (eql player 'black)
-                          (boardt-num-black-kings board)
-                          (boardt-num-white-kings board)))
-           (num-enemy-pieces (if (eql player 'black)
-                                 (+ (boardt-num-white-men board)
-                                    (boardt-num-white-kings board))
-                                 (+ (boardt-num-black-men board)
-                                    (boardt-num-black-kings board))))
+    (let* ((num-pieces (+ (boardt-num-white-men board)
+                           (boardt-num-white-kings board)
+                           (boardt-num-black-men board)
+                           (boardt-num-black-kings board)))
            (enemy-pos-pieces (player-pieces (opponent player) board))
-           (sd (reduce #'+ (mapcar #'car enemy-pos-pieces)
-                       :key #'(lambda (enpos)
-                                (multiple-value-bind (enrow encol)
-                                    (floor enpos 10)
-                                  (let ((rowdist (- row enrow))
-                                        (coldist (- col encol)))
-                                    (+ (* rowdist rowdist)
-                                       (* coldist coldist)))))
-                       :initial-value 0)))
-           (if (> sd 2)
-               (/ 24.0 sd)
-               12)
-    )))
+           (sd (float (apply #'+ 1
+                             (maphash
+                              #'(lambda (enpos enpos-piece)
+                                  (declare (ignore enpos-piece))
+                                  (multiple-value-bind (enrow encol)
+                                      (floor enpos 10)
+                                    (let ((rowdist (abs (- row enrow)))
+                                          (coldist (abs (- col encol))))
+                                      (+ (if (> num-pieces 5)
+                                             (* rowdist rowdist rowdist)
+                                             rowdist)
+                                         (if (> num-pieces 5)
+                                             (* coldist coldist coldist)
+                                             coldist)))))
+                              enemy-pos-pieces)))))
+      (/ 96.0 sd))))
 
 (defun total-piece-value (pos-piece player board)
   "Return total value associated with piece."
   (+ (piece-value (cdr pos-piece))
-     ;; only enable if enemy has 2 or fewer pieces
+     ;; activate row weighting if enemy has 5 or fewer pieces
      (if (<= (if (eql player 'black)
                  (+ (boardt-num-white-men board)
                     (boardt-num-white-kings board))
                  (+ (boardt-num-black-men board)
                     (boardt-num-black-kings board)))
-             2)
+             5)
          (row-weight-fun pos-piece)
          0)
+     ;; apply proximity weighting only to kings
      (if (or (eql (cdr pos-piece) black-king)
              (eql (cdr pos-piece) white-king))
          (proximity-weight-fun pos-piece player board)
-         0)
-     ))
+         0)))
 
 (defun weighted-piece-difference (player board value-fun)
   "Count player's pieces minus opponent's pieces."
   (let ((player-pos-pieces (player-pieces player board))
         (opponent-pos-pieces (player-pieces (opponent player) board)))
-    (- (reduce #'+ player-pos-pieces
-               :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
-               :initial-value 0)
-       (reduce #'+ opponent-pos-pieces
-               :key #'(lambda (pos-piece) (funcall value-fun pos-piece (opponent player) board))
-               :initial-value 0))))
+    ;; (- (reduce #'+ player-pos-pieces
+    ;;            :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
+    ;;            :initial-value 0)
+    ;;    (reduce #'+ opponent-pos-pieces
+    ;;            :key #'(lambda (pos-piece) (funcall value-fun pos-piece (opponent player) board))
+    ;;            :initial-value 0))
+    (- (apply #'+ (maphash
+                   #'(lambda (pos pos-piece)
+                       (declare (ignore pos))
+                       (funcall value-fun pos-piece player board))
+                   player-pos-pieces))
+       (apply #'+ (maphash
+                   #'(lambda (pos pos-piece)
+                       (declare (ignore pos))
+                       (funcall value-fun pos-piece (opponent player) board))
+                   opponent-pos-pieces)))
+
+    ))
 
 (defun piece-ratio (player board)
   "Count player's pieces divided by opponent's pieces."
@@ -94,7 +104,9 @@
   (weighted-piece-difference
    player
    board
-   #'(lambda (pos-piece player board) (piece-value (cdr pos-piece)))))
+   #'(lambda (pos-piece player board)
+       (declare (ignore player board))
+       (piece-value (cdr pos-piece)))))
 
 (defun aggregate-eval-fun (player board)
   (let ((cached-val (gethash board (if (eql player 'black)
@@ -105,47 +117,42 @@
         (setf (gethash board (if (eql player 'black)
                                  *black-transposition-table*
                                  *white-transposition-table*))
-              ;; consider 1v1 as value 0
-              (if (= (+ (boardt-num-white-men board)
-                        (boardt-num-white-kings board))
-                     (+ (boardt-num-black-men board)
-                        (boardt-num-black-kings board)) 1)
-                  0
-                  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
-                        (dif (piece-difference player board))
-                        (rat (piece-ratio player board)))
-                    (+
-                     ;; maximize piece value difference
-                     wdif
-                     ;; trade pieces (maximize rat) if up in pieces
-                     (* (cond ((> dif 0) 10)
-                              ((= dif 0) 0)
-                              ((< dif 0) -10)) rat)
-                     ;; use database lookup to see the outcome of the game
-                     ;; and other above functions to hopefully find winning moves
-                     (if (and (<= (count-pieces player board) 4) (<= (count-pieces (opponent player) board) 4)
-                              (not (member (cdar (legal-moves player board)) all-jumps)))
-                         (with-foreign-object (pos '(:struct position))
-                           (setf (foreign-slot-value pos '(:struct position) 'bm) (boardt-bm board))
-                           (setf (foreign-slot-value pos '(:struct position) 'bk) (boardt-bk board))
-                           (setf (foreign-slot-value pos '(:struct position) 'wm) (boardt-wm board))
-                           (setf (foreign-slot-value pos '(:struct position) 'wk) (boardt-wk board))
-                           (setf (foreign-slot-value pos '(:struct position) 'color) (boardt-color board))
-                           (let ((dbres (dblookup pos 0)))
-                             ;; (if (> dbres 0) (format t "db: ~a~%" dbres))
-                             (cond
-                               ;; position not in database
-                               ((= dbres 0) 0)
-                               ;; win for color to move
-                               ((= dbres 1) 10000)
-                               ;; loss for color to move
-                               ((= dbres 2) -10000)
-                               ;; draw
-                               ((= dbres 3) 0)
-                               ;; conditional lookup not executed
-                               ((= dbres 4) 0))))
-                         0)
-                     )))))))
+              (let ((wdif (weighted-piece-difference player board #'total-piece-value))
+                    (dif (piece-difference player board))
+                    (rat (piece-ratio player board)))
+                (+
+                 ;; maximize piece value difference
+                 wdif
+                 0
+                 ;; trade pieces (maximize rat) if up in pieces
+                 (* (cond ((> dif 0) 100)
+                          ((= dif 0) 0)
+                          ((< dif 0) -100)) rat)
+
+                 ;; (if (and (<= (count-pieces player board) 4) (<= (count-pieces (opponent player) board) 4)
+                 ;;          (not (member (cdar (legal-moves player board)) all-jumps)))
+                 ;;     (with-foreign-object (pos '(:struct position))
+                 ;;       (setf (foreign-slot-value pos '(:struct position) 'bm) (boardt-bm board))
+                 ;;       (setf (foreign-slot-value pos '(:struct position) 'bk) (boardt-bk board))
+                 ;;       (setf (foreign-slot-value pos '(:struct position) 'wm) (boardt-wm board))
+                 ;;       (setf (foreign-slot-value pos '(:struct position) 'wk) (boardt-wk board))
+                 ;;       (setf (foreign-slot-value pos '(:struct position) 'color) (boardt-color board))
+                 ;;       (let ((dbres (dblookup pos 0)))
+                 ;;         ;; (if (> dbres 0) (format t "db: ~a~%" dbres))
+                 ;;         (cond
+                 ;;           ;; position not in database
+                 ;;           ((= dbres 0) 0)
+                 ;;           ;; win for color to move
+                 ;;           ((= dbres 1) 10000)
+                 ;;           ;; loss for color to move
+                 ;;           ((= dbres 2) -10000)
+                 ;;           ;; draw
+                 ;;           ((= dbres 3) 0)
+                 ;;           ;; conditional lookup not executed
+                 ;;           ((= dbres 4) 0))))
+                 ;;     0)
+                 )))
+        )))
 
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply
@@ -193,12 +200,14 @@
         (declare (ignore value))
         move)))
 
-(defun alpha-beta (player board achievable cutoff ply eval-fn)
+(defun alpha-beta (player board achievable cutoff ply eval-fn &key piece type)
   "Find the best move for PLAYER according to EVAL-FN, searching PLY
   levels deep. Don't call it with PLY 0."
   (if (= ply 0)
       (funcall eval-fn player board)
-      (let ((moves (legal-moves player board)))
+      (let ((moves (if piece
+                       (legal-moves player board :piece piece :type type)
+                       (legal-moves player board))))
         (if (null moves)
             most-negative-fixnum
             (do* ((best-move (random-elt moves))
@@ -301,12 +310,12 @@
   "A streatgy that searches for TIME seconds and then uses EVAL-FN."
   #'(lambda (player board &key piece type)
       (alpha-beta-iterative-deepening-wrapper player board
-                                              (* (- time .01) ; leave 0.01s buffer
+                                              (* (- time .02) ; margin of error
                                                  internal-time-units-per-second)
                                               eval-fn
                                               :piece piece :type type)))
 
-(defun human (player board &key piece type)
+(defun human (player board)
   "A human player for the game of Checkers"
   (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
   (format *query-io* "cl-checkers$ ")
