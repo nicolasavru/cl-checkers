@@ -26,6 +26,8 @@
    '((str . "W") (fg . :white))
    '((str . "O")))
   "List of alists containing properties for each piece type.")
+(defparameter *enable-transposition-tables* t)
+(defparameter *time-headroom* 0.2)
 
 (defparameter *black-computer-p* (y-or-n-p "Is black player a computer?"))
 (defparameter *white-computer-p* (y-or-n-p "Is white player a computer?"))
@@ -38,7 +40,7 @@
     (let ((fname))
       (format *query-io* "Enter the board file: ")
       (force-output *query-io*)
-      (setf fname (read *query-io*))
+      (setf fname (read-line *query-io*))
       (load-game fname
                  (if *black-computer-p* #'computer-strategy #'human-wrapper)
                  (if *white-computer-p* #'computer-strategy #'human-wrapper)))

@@ -5,14 +5,15 @@ and a Common Lisp learning project.
 
 ## Details
 
-Searching is done using minimax with alpha-beta pruning and
-transposition tables are implemented to cache the results of position
-evaluations for each move. This code is *lightly* optimized. On
-average, 10-11 plys are searched in 1 second.
+Searching is done using minimax with alpha-beta pruning. This code is
+*lightly* optimized. On average, 8-11 plys are searched in 1 second,
+depending on whether there are kings on the board.
 
 Fair warning: the AI sucks at endgames. Especially two kings vs one
 kings endgames. It is smart enough to not lose, but not smart enough
-to win.
+to win. However, it is sometimes kind enough to realize that it cannot
+win a two king vs one king endgame and may put itself out of its
+misery.
 
 The initial structure of the game was inspired by the Othello project
 in chapter 18 of Peter Norvig's Paradigms of Artificial Intelligence
@@ -21,6 +22,28 @@ Programming: Case Studies in Common LISP.
 An endgame database from http://www.fierz.ch/cake.php was implemented,
 but results were not satisfactory with the used evaluation
 functions. This would be a good area to re-visit in future.
+
+### Transposition Tables
+
+ **With the default settings, checkers will crash due to heap
+exhaustion if more than one second is allowed for each computer player
+move.**
+
+Transposition tables are implemented and enabled by default, but
+should be disabled when giving the computer players more than 1 second
+per move due to their memory requirements. I do not know how much
+memory is required for using transposition tables with greater than 1
+second moves. If sbcl is allowed insufficient memory for the hash
+tables, it will crash due to heap exhaustion. More memory can be
+allowed by increasing the numeric argument to the `--dynamic-size`
+flag for sbcl.
+
+To disable transposition tables, set `*enable-transposition-tables*`
+to `nil` in run.lisp. Transposition tables definitely improve play, so
+the user in encouraged to try enabling them when allowing the computer
+one second per move. When transposition tables are disabled, less
+`*time-headroom*` can be reduced to something like 0.02.
+
 
 ## Usage
 
@@ -33,12 +56,13 @@ functions. This would be a good area to re-visit in future.
    * (sb-ext:exit)
 ```
 
+
 2. Configure ASDF2:
 ```$ mkdir -p ~/.config/common-lisp/source-registry.conf.d/```
 
 ~/.config/common-lisp/source-registry.conf.d/projects.conf should
 contain the following contents:
-(:tree (:home "Documents/lisp/"))
+```(:tree (:home "Documents/lisp/"))```
 
 "Documents/lisp/" is a path relative to your home directory that ASDF
 will search for lisp projects in.
@@ -75,7 +99,12 @@ No vectors other than these eight are valid movement vectors. n-jumps are
 treated as n successive moves by the same player, so each step of the jump
 must be entered individually.
 
-
-
-
+During gameplay, a primitive command shell is available to the
+player. A list of commands can be viewed by entering (help) when
+prompted for a move. Currently, only the (help), (print-board), and
+(dump-board) commands are implemented, but this could be extended to
+act as a full debugging and game control console. The input (including
+move input) is robust against erroneous input and will re-prompt, with
+the exception mismatched closing parenthesis, which will trigger an
+error.
 

@@ -94,33 +94,45 @@
        (declare (ignore player board))
        (piece-value (cdr pos-piece)))))
 
+(defparameter *enable-transposition-tables* nil)
+
 (defun aggregate-eval-fun (player board)
-  (let ((cached-val (gethash board (if (eql player 'black)
-                                       *black-transposition-table*
-                                       *white-transposition-table*))))
-    (if cached-val
-        cached-val
-        (setf (gethash board (if (eql player 'black)
-                                 *black-transposition-table*
-                                 *white-transposition-table*))
-              ;; treat 1 piece vs 1 piece as a draw and evaluate it as 0
-              (if (= (+ (boardt-num-white-men board)
-                        (boardt-num-white-kings board))
-                     (+ (boardt-num-black-men board)
-                        (boardt-num-black-kings board))
-                     1)
-                  0
-                  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
-                        (dif (piece-difference player board))
-                        (rat (piece-ratio player board)))
-                    (+
-                     ;; maximize piece value difference
-                     wdif
-                     0
-                     ;; trade pieces (maximize rat) if up in pieces
-                     (* (cond ((> dif 0) 100)
-                              ((= dif 0) 0)
-                              ((< dif 0) -100)) rat))))))))
+  ;; treat 1 piece vs 1 piece as a draw and evaluate it as 0
+  ;; also don't store draws in the transposition table
+  (if (= (+ (boardt-num-white-men board)
+            (boardt-num-white-kings board))
+         (+ (boardt-num-black-men board)
+            (boardt-num-black-kings board))
+         1)
+      0
+      (let ((cached-val)
+            (computed-val))
+        (if *enable-transposition-tables*
+            (setf cached-val (gethash board (if (eql player 'black)
+                                                *black-transposition-table*
+                                                *white-transposition-table*))))
+        (if cached-val
+            cached-val
+            (progn
+              (setf computed-val
+                    (let ((wdif (weighted-piece-difference player board #'total-piece-value))
+                          (dif (piece-difference player board))
+                          (rat (piece-ratio player board)))
+                      (+
+                       ;; maximize piece value difference
+                       wdif
+                       0
+                       ;; trade pieces (maximize rat) if up in pieces
+                       (* (cond ((> dif 0) 100)
+                                ((= dif 0) 0)
+                                ((< dif 0) -100)) rat))))
+
+              (if *enable-transposition-tables*
+                  (setf (gethash board (if (eql player 'black)
+                                           *black-transposition-table*
+                                           *white-transposition-table*))
+                        computed-val))
+                computed-val)))))
 
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply
@@ -231,9 +243,11 @@
                     (setf achievable val)
                     (setf best-move move)))))))))
 
+(defparameter *time-headroom* 0.02)
+
 (defun alpha-beta-iterative-deepening-wrapper (player board time eval-fn &key piece type)
-  (do* ((*black-transposition-table* (make-hash-table))
-        (*white-transposition-table* (make-hash-table))
+  (do* ((*black-transposition-table* (if *enable-transposition-tables* (make-hash-table)))
+        (*white-transposition-table* (if *enable-transposition-tables* (make-hash-table)))
         (moves (if piece
                    (legal-moves player board :piece piece :type type)
                    (legal-moves player board)))
@@ -278,7 +292,7 @@
   "A streatgy that searches for TIME seconds and then uses EVAL-FN."
   #'(lambda (player board &key piece type)
       (alpha-beta-iterative-deepening-wrapper player board
-                                              (* (- time .03) ; margin of error
+                                              (* (- time *time-headroom*) ; margin of error
                                                  internal-time-units-per-second)
                                               eval-fn
                                               :piece piece :type type)))
