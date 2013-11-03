@@ -127,32 +127,7 @@
                  ;; trade pieces (maximize rat) if up in pieces
                  (* (cond ((> dif 0) 100)
                           ((= dif 0) 0)
-                          ((< dif 0) -100)) rat)
-
-                 ;; (if (and (<= (count-pieces player board) 4) (<= (count-pieces (opponent player) board) 4)
-                 ;;          (not (member (cdar (legal-moves player board)) all-jumps)))
-                 ;;     (with-foreign-object (pos '(:struct position))
-                 ;;       (setf (foreign-slot-value pos '(:struct position) 'bm) (boardt-bm board))
-                 ;;       (setf (foreign-slot-value pos '(:struct position) 'bk) (boardt-bk board))
-                 ;;       (setf (foreign-slot-value pos '(:struct position) 'wm) (boardt-wm board))
-                 ;;       (setf (foreign-slot-value pos '(:struct position) 'wk) (boardt-wk board))
-                 ;;       (setf (foreign-slot-value pos '(:struct position) 'color) (boardt-color board))
-                 ;;       (let ((dbres (dblookup pos 0)))
-                 ;;         ;; (if (> dbres 0) (format t "db: ~a~%" dbres))
-                 ;;         (cond
-                 ;;           ;; position not in database
-                 ;;           ((= dbres 0) 0)
-                 ;;           ;; win for color to move
-                 ;;           ((= dbres 1) 10000)
-                 ;;           ;; loss for color to move
-                 ;;           ((= dbres 2) -10000)
-                 ;;           ;; draw
-                 ;;           ((= dbres 3) 0)
-                 ;;           ;; conditional lookup not executed
-                 ;;           ((= dbres 4) 0))))
-                 ;;     0)
-                 )))
-        )))
+                          ((< dif 0) -100)) rat)))))))
 
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply

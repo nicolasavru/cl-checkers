@@ -4,13 +4,11 @@
   :serial t
   :description "A checkers game and AI written in Common Lisp."
   :author "Nicolas Avrutin <nicolasavru@gmail.com>"
-  :license "Specify license here"
   :depends-on (#:lisp-unit
                #:split-sequence
                #:cffi)
   :components ((:file "package")
                (:file "utils")
-               (:file "dblookup")
                (:file "commands")
                (:file "checkers")
                (:file "strategies")
