@@ -13,8 +13,8 @@
 
 (defconstant empty 0)
 (defconstant black-man 1)
-(defconstant black-king 2)
-(defconstant white-man 3)
+(defconstant black-king 3)
+(defconstant white-man 2)
 (defconstant white-king 4)
 (defconstant outer 5)
 
@@ -23,11 +23,15 @@
 
 (deftype piece () `(integer ,empty ,outer))
 
+;; declare transposition tables dynamic
+(defparameter *black-transposition-table* nil)
+(defparameter *white-transposition-table* nil)
+
 (defstruct boardt
   (squares (make-array 100 :element-type 'piece :initial-element outer) :type (vector piece))
-  (num-black-men 12 :type fixnum)
+  (num-black-men 0 :type fixnum)
   (num-black-kings 0 :type fixnum)
-  (num-white-men 12 :type fixnum)
+  (num-white-men 0 :type fixnum)
   (num-white-kings 0 :type fixnum)
   (black-pos-piece-alist () :type list)
   (white-pos-piece-alist () :type list)
@@ -37,23 +41,24 @@
   (wk 0 :type integer)
   (color black :type integer))
 
+(defparameter *xscale* 1)
+(defparameter *yscale* 1)
+
+(defparameter *debug* nil)
+
 (defparameter piece-alist-list
   (list
-   '((symb . empty)      (str . "."))
-   '((symb . black-man)  (str . "b") (fg . :red))
-   '((symb . black-king) (str . "B") (fg . :red))
-   '((symb . white-man)  (str . "w") (fg . :white))
-   '((symb . white-king) (str . "W") (fg . :white))
-   '((symb . outer)      (str . "O")))
+   '((str . "."))
+   '((str . "b") (fg . :red))
+   '((str . "w") (fg . :white))
+   '((str . "B") (fg . :red))
+   '((str . "W") (fg . :white))
+   '((str . "O")))
   "List of alists containing properties for each piece type.")
 
 (defun alist-of (piece)
   "Return alist associated with PIECE."
   (nth piece piece-alist-list))
-
-(defun symb-of (piece)
-  "Return a symbol representing PIECE."
-  (cdr (assoc 'symb (alist-of piece))))
 
 (defun string-of (piece)
   "Return a string representing PIECE."
@@ -66,11 +71,12 @@
 (defun next-player (player move board &optional kingedp)
   "Select next player to move given the current PLAYER, his previous
   MOVE, the BOARD, and whether a piece was kinged during MOVE."
-  (if (and (member (cdr move) all-jumps)
-           (legal-moves player board :piece (+ (car move) (cdr move)) :type all-jumps)
-           (not kingedp))
-      player
-      (opponent player)))
+  (let ((dst (+ (car move) (cdr move))))
+    (if (and (member (cdr move) all-jumps)
+             (legal-moves player board :piece dst :type all-jumps)
+             (not kingedp))
+        player
+        (opponent player))))
 
 (deftype boardarr () '(simple-array piece (100)))
 
@@ -85,14 +91,6 @@
   (let ((new-board (copy-boardt board)))
     (setf (boardt-squares new-board) (copy-squares (boardt-squares board)))
     new-board))
-
-(defun square-to-cake (square)
-  (multiple-value-bind (row col)
-      (floor square 10)
-    (+ (* 4 (- row 1))
-       (if (oddp row)
-           (/ (- 8 col) 2)
-           (/ (- 8 (+ col 1)) 2)))))
 
 (defparameter all-squares
   (do ((i 11 (1+ i))
@@ -115,18 +113,17 @@
 (defparameter white-kingrow (nth-row-squares 1))
 (defparameter black-kingrow (nth-row-squares 8))
 
-;; (defun player-pieces (player board)
-;;   "Return a list of (POS . PIECE) cons cells."
-;;   (do ((len (length (boardt-squares board)))
-;;        (pos 0 (1+ pos))
-;;        (res))
-;;       ((= pos len) res)
-;;     (let ((piece (bref (boardt-squares board) pos)))
-;;       ;; (if (typep piece (symb player '-piece))
-;;       (if (member piece (if (eql player 'black)
-;;                             (list black-man black-king)
-;;                             (list white-man white-king)))
-;;           (push (cons pos piece) res)))))
+(defun square-to-cake (square)
+  (multiple-value-bind (row col)
+      (floor square 10)
+    (+ (* 4 (- row 1))
+       (if (oddp row)
+           (/ (- 8 col) 2)
+           (/ (- 8 (+ col 1)) 2)))))
+
+(defparameter *square-to-cake-table* (make-hash-table))
+(dolist (square black-squares)
+  (setf (gethash square *square-to-cake-table*) (square-to-cake square)))
 
 (defun player-pieces (player board)
   "Return a list of (POS . PIECE) cons cells."
@@ -139,49 +136,120 @@
   "Return a board with initial positions of both players"
   ;; Boards are 100-element vectors with elements
   ;; (<= 1 (mod 11-88 10) 8) used and the others marked with the sentinel OUTER.
-  (let* ((board (make-boardt))
+  (let* ((board (make-boardt :num-black-men 12
+                             :num-white-men 12))
          (black-starting-squares
            (subseq black-squares 0 12))
          (white-starting-squares
            (subseq black-squares (- (length black-squares) 12))))
+
     (dolist (square all-squares)
       (setf (bref (boardt-squares board) square) empty))
+
     (dolist (square black-starting-squares)
       (setf (bref (boardt-squares board) square) black-man)
       (setf (boardt-black-pos-piece-alist board)
             (acons square black-man (boardt-black-pos-piece-alist board)))
-      (setf (boardt-bm board) (logior (boardt-bm board) (ash 1 (square-to-cake square)))))
+      (setf (boardt-bm board) (logior (boardt-bm board) (ash 1 (gethash square *square-to-cake-table*)))))
+
     (dolist (square white-starting-squares)
       (setf (bref (boardt-squares board) square) white-man)
       (setf (boardt-white-pos-piece-alist board)
             (acons square white-man (boardt-white-pos-piece-alist board)))
-      (setf (boardt-wm board) (logior (boardt-wm board) (ash 1 (square-to-cake square)))))
+      (setf (boardt-wm board) (logior (boardt-wm board) (ash 1 (gethash square *square-to-cake-table*)))))
     board))
 
-;; (defun load-board (filename)
-;;   (let ((in (open filename))
-;;         (input-squares)
-;;         (i 0)
-;;         (board (make-array 100 :element-type 'piece :initial-element outer)))
-;;     (dotimes (row 8)
-;;       (let ((line (string-trim '(#\Return) (read-line in))))
-;;         (setf input-squares
-;;               (nconc input-squares
-;;                      (read-from-string (concatenate 'string "(" line ")"))))))
-;;     (dolist (square all-squares)
-;;       (setf (bref (boardt-squares board) square) empty))
-;;     (dolist (square black-squares)
-;;       (setf (bref (boardt-squares board) square) (elt input-squares i))
-;;       (incf i))
-;;     board))
+(defun load-game (filename black-strategy white-strategy)
+  (let ((in (open filename))
+        (input-squares)
+        (player-to-move)
+        (time)
+        (line)
+        (board))
 
-(defun print-board (board)
+    (dotimes (row 8)
+      (setf line (string-trim '(#\Return) (read-line in)))
+      (setf input-squares
+            (nconc input-squares
+                   (read-from-string (concatenate 'string "(" line ")")))))
+
+    (setf board (load-board input-squares))
+
+    (setf line (string-trim '(#\Return) (read-line in)))
+    (setf player-to-move (if (= (parse-integer line) 1) 'black 'white))
+
+    (setf line (string-trim '(#\Return) (read-line in)))
+    (setf time (parse-integer line))
+
+    (checkers (funcall black-strategy time)
+              (funcall white-strategy time)
+              :player-to-move player-to-move
+              :board board)))
+
+(defun load-board (input-squares)
+  (let ((i 0)
+        (board (make-boardt)))
+
+    (dolist (square all-squares)
+      (setf (bref (boardt-squares board) square) empty))
+
+    (dolist (square black-squares)
+      (let ((piece (elt input-squares i)))
+        (setf (bref (boardt-squares board) square) piece)
+        (cond ((= piece black-man)
+               (setf (boardt-black-pos-piece-alist board)
+                     (acons square black-man (boardt-black-pos-piece-alist board)))
+               (incf (boardt-num-black-men board))
+               (setf (boardt-bm board)
+                     (logior (boardt-bm board) (ash 1 (gethash square *square-to-cake-table*)))))
+
+              ((= piece black-king)
+               (setf (boardt-black-pos-piece-alist board)
+                     (acons square black-king (boardt-black-pos-piece-alist board)))
+               (incf (boardt-num-black-kings board))
+               (setf (boardt-bk board)
+                     (logior (boardt-bk board) (ash 1 (gethash square *square-to-cake-table*)))))
+
+              ((= piece white-man)
+               (setf (boardt-white-pos-piece-alist board)
+                     (acons square white-man (boardt-white-pos-piece-alist board)))
+               (incf (boardt-num-white-men board))
+               (setf (boardt-wm board)
+                     (logior (boardt-wm board) (ash 1 (gethash square *square-to-cake-table*)))))
+
+              ((= piece white-king)
+               (setf (boardt-white-pos-piece-alist board)
+                     (acons square white-king (boardt-white-pos-piece-alist board)))
+               (incf (boardt-num-white-kings board))
+               (setf (boardt-wk board)
+                     (logior (boardt-wk board) (ash 1 (gethash square *square-to-cake-table*)))))))
+
+      (incf i))
+    board))
+
+(defun print-board (board &key (xscale *xscale*) (yscale *yscale*))
   "Print a board."
-  (format t "    ~{~d ~}" '(1 2 3 4 5 6 7 8))
+  (format t "    ")
+  (dotimes (col 8)
+    (format t "~d~a" (1+ col) (make-string (if (> xscale 1) (1+ xscale) 1)
+                                      :initial-element #\space)))
   (dotimes (row 8)
-    (format t "~& ~d " (* 10 (1+ row)))
-    (dotimes (col 8)
-      (format t "~A "  (string-of (bref (boardt-squares board) (+ (* 10 (1+ row)) (1+ col)))))))
+    (format t "~a ~d "
+            (make-string (if (> xscale 1) 2 1) :initial-element #\newline)
+            (* 10 (1+ row)))
+    (let ((line ""))
+      (dotimes (col 8)
+        (setf line
+              (concatenate 'string line
+                           (format nil "~A~a"
+                                   (string-of (bref (boardt-squares board)
+                                                               (+ (* 10 (1+ row)) (1+ col))))
+                                   (make-string (if (> xscale 1) 2 1)
+                                                :initial-element #\space)))))
+      (format t "~A" (scale-text line :xscale xscale :yscale yscale
+                                      :line-sep (format nil "~C    "
+                                                        #\newline)
+                                      :chars '(#\. #\b #\B #\w #\W)))))
   (format t "~2&"))
 
 (defun valid-p (move)
@@ -210,8 +278,7 @@
          (vec (cdr move))
          (dst (+ src vec))
          (p (bref (boardt-squares board) src))
-         (d (bref (boardt-squares board) dst))
-         )
+         (d (bref (boardt-squares board) dst)))
     (flet ((test-vec (p vec)
              "Test if vec is a valid move for PIECE-OWNER's piece of type PIECE-TYPE"
              (cond ((= p black-man)
@@ -256,6 +323,24 @@
                    (legal-p (cons pos vec) player board))
           (push vec result))))))
 
+;; slower for some reason?!?
+;; (defun legal-moves-maybe (player board &key piece (type (append all-steps all-jumps)))
+;;   "Return all potential legal moves for PLAYER on BOARD. If PIECE or TYPE
+;;   is spcified, return moves only for that piece and only of that type."
+;;   (let ((result ())
+;;         (player-piece-type (if (eql player 'black)
+;;                                (list black-man black-king)
+;;                                (list white-man white-king))))
+;;     (if piece
+;;         (mapcar #'(lambda (vec) (cons piece vec))
+;;                       (legal-piece-moves piece player board :type type))
+;;         (dolist (pos-piece (player-pieces player board) result)
+;;           (let ((pos (car pos-piece)))
+;;                 (setf result
+;;                       (append (mapcar #'(lambda (vec) (cons pos vec))
+;;                                       (legal-piece-moves pos player board
+;;                                                          :type type)) result)))))))
+
 (defun legal-moves-maybe (player board &key piece (type (append all-steps all-jumps)))
   "Return all potential legal moves for PLAYER on BOARD. If PIECE or TYPE
   is spcified, return moves only for that piece and only of that type."
@@ -288,8 +373,6 @@
          (values white-king t))
         (t (values piece nil))))
 
-;; (defmacro )
-
 (defun make-move (player move board)
   "Update BOARD to reflect move by player. Assume MOVE is
   legal. Return the updated board and T if a piece was kinged, else
@@ -315,13 +398,13 @@
 
       ;; remove src from cake representation
       (cond ((= piece black-man)
-             (setf (boardt-bm board) (logxor (boardt-bm board) (ash 1 (square-to-cake src)))))
+             (setf (boardt-bm board) (logxor (boardt-bm board) (ash 1 (gethash src *square-to-cake-table*)))))
             ((= piece black-king)
-             (setf (boardt-bk board) (logxor (boardt-bk board) (ash 1 (square-to-cake src)))))
+             (setf (boardt-bk board) (logxor (boardt-bk board) (ash 1 (gethash src *square-to-cake-table*)))))
             ((= piece white-man)
-             (setf (boardt-wm board) (logxor (boardt-wm board) (ash 1 (square-to-cake src)))))
+             (setf (boardt-wm board) (logxor (boardt-wm board) (ash 1 (gethash src *square-to-cake-table*)))))
             ((= piece white-king)
-             (setf (boardt-wk board) (logxor (boardt-wk board) (ash 1 (square-to-cake src))))))
+             (setf (boardt-wk board) (logxor (boardt-wk board) (ash 1 (gethash src *square-to-cake-table*))))))
 
       ;; add dst to pos-piece alist
       (if (eql player 'black)
@@ -333,11 +416,11 @@
       ;; add dest to cake representation
       (if (or kingedp (= piece black-king) (= piece white-king))
           (if (eql player 'black)
-              (setf (boardt-bk board) (logxor (boardt-bk board) (ash 1 (square-to-cake dst))))
-              (setf (boardt-wk board) (logxor (boardt-wk board) (ash 1 (square-to-cake dst)))))
+              (setf (boardt-bk board) (logxor (boardt-bk board) (ash 1 (gethash dst *square-to-cake-table*))))
+              (setf (boardt-wk board) (logxor (boardt-wk board) (ash 1 (gethash dst *square-to-cake-table*)))))
           (if (eql player 'black)
-              (setf (boardt-bm board) (logxor (boardt-bm board) (ash 1 (square-to-cake dst))))
-              (setf (boardt-wm board) (logxor (boardt-wm board) (ash 1 (square-to-cake dst))))))
+              (setf (boardt-bm board) (logxor (boardt-bm board) (ash 1 (gethash dst *square-to-cake-table*))))
+              (setf (boardt-wm board) (logxor (boardt-wm board) (ash 1 (gethash dst *square-to-cake-table*))))))
 
       (if (member vec all-jumps)
           (let* ((jumped-pos (+ (/ vec 2) src))
@@ -351,18 +434,21 @@
                 (setf (boardt-black-pos-piece-alist board)
                       (remove jumped-pos (boardt-black-pos-piece-alist board) :test #'= :key #'car)))
             (cond ((= captured-piece black-man)
-                   (setf (boardt-bm board) (logxor (boardt-bm board) (ash 1 (square-to-cake jumped-pos))))
+                   (setf (boardt-bm board) (logxor (boardt-bm board)
+                                                   (ash 1 (gethash jumped-pos *square-to-cake-table*))))
                    (decf (boardt-num-black-men board)))
                   ((= captured-piece black-king)
-                   (setf (boardt-bk board) (logxor (boardt-bk board) (ash 1 (square-to-cake jumped-pos))))
+                   (setf (boardt-bk board) (logxor (boardt-bk board)
+                                                   (ash 1 (gethash jumped-pos *square-to-cake-table*))))
                    (decf (boardt-num-black-kings board)))
                   ((= captured-piece white-man)
-                   (setf (boardt-wm board) (logxor (boardt-wm board) (ash 1 (square-to-cake jumped-pos))))
+                   (setf (boardt-wm board) (logxor (boardt-wm board)
+                                                   (ash 1 (gethash jumped-pos *square-to-cake-table*))))
                    (decf (boardt-num-white-men board)))
                   ((= captured-piece white-king)
-                   (setf (boardt-wk board) (logxor (boardt-wk board) (ash 1 (square-to-cake jumped-pos))))
-                   (decf (boardt-num-white-kings board))))
-            ))
+                   (setf (boardt-wk board) (logxor (boardt-wk board)
+                                                   (ash 1 (gethash jumped-pos *square-to-cake-table*))))
+                   (decf (boardt-num-white-kings board))))))
 
       (if kingedp
           (progn
@@ -379,8 +465,10 @@
   the piece that must be moved. TYPE is a list of moves to consider (and
   check for legality). Keep calling until a legal move is made. Return
   NIL if there are no valid movies."
+  (setf *position-hash-table* (make-hash-table))
   (let* ((moves (legal-moves player board :piece piece :type type))
-         (move (if moves (funcall strategy player (copy-board board))))
+         (move (if moves (funcall strategy player (copy-board board)
+                                  :piece piece :type type)))
          (command (symb (car move) '-command)))
     (if (null moves)
         nil
@@ -392,14 +480,13 @@
             (if (member move moves :test #'equal)
                 move
                 (progn
-                  ;; (print moves)
-                  ;; (print (list move player board piece type))
-                  (warn "Illegal move or unknown command: ~a~%Moves: ~a" move moves)
+                  (warn "Illegal move or unknown command: ~a~%" move)
                   (get-move strategy player board :piece piece :type type)))))))
 
 (defun checkers (black-strategy white-strategy
                  &key (player-to-move 'black) (board (initial-board)) (print t))
   "Play a game of checkers. Return the victor (though not in a vector). "
+  (print-board board)
   (do* ((prev-player nil player)
         (player player-to-move (next-player player move board kingedp))
         (strategy (if (eql player 'black) black-strategy white-strategy)

@@ -42,41 +42,36 @@
                                  (+ (boardt-num-black-men board)
                                     (boardt-num-black-kings board))))
            (enemy-pos-pieces (player-pieces (opponent player) board))
-           (sd (float (/ (+ 1 (reduce #'+ (mapcar #'car enemy-pos-pieces)
-                                      :key #'(lambda (enpos)
-                                               (multiple-value-bind (enrow encol)
-                                                   (floor enpos 10)
-                                                 (let ((rowdist (- row enrow))
-                                                       (coldist (- col encol)))
-                                                   (+ (* rowdist rowdist)
-                                                      (* coldist coldist)))))
-                                      :initial-value 0))
-                         (+ num-kings num-enemy-pieces)))))
-      (if (> sd 2)
-          (/ 12.0 sd)
-          6))))
+           (sd (reduce #'+ (mapcar #'car enemy-pos-pieces)
+                       :key #'(lambda (enpos)
+                                (multiple-value-bind (enrow encol)
+                                    (floor enpos 10)
+                                  (let ((rowdist (- row enrow))
+                                        (coldist (- col encol)))
+                                    (+ (* rowdist rowdist)
+                                       (* coldist coldist)))))
+                       :initial-value 0)))
+           (if (> sd 2)
+               (/ 24.0 sd)
+               12)
+    )))
 
 (defun total-piece-value (pos-piece player board)
   "Return total value associated with piece."
-  ;; (let ((prox(if (or (eql (cdr pos-piece) black-king)
-  ;;                    (eql (cdr pos-piece) white-king))
-  ;;                (proximity-weight-fun pos-piece board)
-  ;;                0)))
-  ;;   (if (> prox 1)
-  ;;       (format t "~a, ~a, ~a~%"
-  ;;               (piece-value (cdr pos-piece))
-  ;;               (row-weight-fun pos-piece)
-  ;;               (if (or (eql (cdr pos-piece) black-king)
-  ;;                       (eql (cdr pos-piece) white-king))
-  ;;                   (proximity-weight-fun pos-piece board)
-  ;;                   0))))
-
   (+ (piece-value (cdr pos-piece))
-     ;; (row-weight-fun pos-piece)
-     ;; (if (or (eql (cdr pos-piece) black-king)
-     ;;         (eql (cdr pos-piece) white-king))
-     ;;     (proximity-weight-fun pos-piece player board)
-     ;;     0)
+     ;; only enable if enemy has 2 or fewer pieces
+     (if (<= (if (eql player 'black)
+                 (+ (boardt-num-white-men board)
+                    (boardt-num-white-kings board))
+                 (+ (boardt-num-black-men board)
+                    (boardt-num-black-kings board)))
+             2)
+         (row-weight-fun pos-piece)
+         0)
+     (if (or (eql (cdr pos-piece) black-king)
+             (eql (cdr pos-piece) white-king))
+         (proximity-weight-fun pos-piece player board)
+         0)
      ))
 
 (defun weighted-piece-difference (player board value-fun)
@@ -87,7 +82,7 @@
                :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
                :initial-value 0)
        (reduce #'+ opponent-pos-pieces
-               :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
+               :key #'(lambda (pos-piece) (funcall value-fun pos-piece (opponent player) board))
                :initial-value 0))))
 
 (defun piece-ratio (player board)
@@ -95,58 +90,62 @@
   (/ (float (count-pieces player board))
      (float (count-pieces (opponent player) board))))
 
-;; (defun simple-piece-difference (player board)
-;;   "Count PLAYER's pieces minus opponent's pieces."
-;;   (- (+ (if (eql player 'black) (boardt-num-black-men board) (boardt-num-white-men board))
-;;         (* 2 (if (eql player 'black) (boardt-num-black-kings board) (boardt-num-white-kings board))))
-;;      (+ (if (eql player 'white) (boardt-num-black-men board) (boardt-num-white-men board))
-;;         (* 2 (if (eql player 'white) (boardt-num-black-kings board) (boardt-num-white-kings board))))
-;;      ))
-
 (defun simple-eval-fun (player board)
   (weighted-piece-difference
    player
    board
    #'(lambda (pos-piece player board) (piece-value (cdr pos-piece)))))
 
-
 (defun aggregate-eval-fun (player board)
-  ;; (format t "~a~a~%" (count-pieces player board) (count-pieces (opponent player) board))
-  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
-        (dif (piece-difference player board))
-        (rat (piece-ratio player board)))
-        (+
-         ;; maximize piece value difference
-         wdif
-         ;; trade pieces (maximize rat) if up in pieces
-         (* (cond ((> dif 0) 100)
-                  ((= dif 0) 0)
-                  ((< dif 0) -100)) rat)
-
-         (if (and (<= (count-pieces player board) 4) (<= (count-pieces (opponent player) board) 4)
-                  (not (member (cdar (legal-moves player board)) all-jumps)))
-             (with-foreign-object (pos '(:struct position))
-               (setf (foreign-slot-value pos '(:struct position) 'bm) (boardt-bm board))
-               (setf (foreign-slot-value pos '(:struct position) 'bk) (boardt-bk board))
-               (setf (foreign-slot-value pos '(:struct position) 'wm) (boardt-wm board))
-               (setf (foreign-slot-value pos '(:struct position) 'wk) (boardt-wk board))
-               (setf (foreign-slot-value pos '(:struct position) 'color) (boardt-color board))
-               (let ((dbres (dblookup pos 0)))
-                 ;; (if (> dbres 0) (format t "db: ~a~%" dbres))
-                 (cond
-                   ;; position not in database
-                   ((= dbres 0) 0)
-                   ;; win for color to move
-                   ((= dbres 1) 10000)
-                   ;; loss for color to move
-                   ((= dbres 2) -10000)
-                   ;; draw
-                   ((= dbres 3) 0)
-                   ;; conditional lookup not executed
-                   ((= dbres 4) 0))))
-             0
-
-         ))))
+  (let ((cached-val (gethash board (if (eql player 'black)
+                                       *black-transposition-table*
+                                       *white-transposition-table*))))
+    (if cached-val
+        cached-val
+        (setf (gethash board (if (eql player 'black)
+                                 *black-transposition-table*
+                                 *white-transposition-table*))
+              ;; consider 1v1 as value 0
+              (if (= (+ (boardt-num-white-men board)
+                        (boardt-num-white-kings board))
+                     (+ (boardt-num-black-men board)
+                        (boardt-num-black-kings board)) 1)
+                  0
+                  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
+                        (dif (piece-difference player board))
+                        (rat (piece-ratio player board)))
+                    (+
+                     ;; maximize piece value difference
+                     wdif
+                     ;; trade pieces (maximize rat) if up in pieces
+                     (* (cond ((> dif 0) 10)
+                              ((= dif 0) 0)
+                              ((< dif 0) -10)) rat)
+                     ;; use database lookup to see the outcome of the game
+                     ;; and other above functions to hopefully find winning moves
+                     (if (and (<= (count-pieces player board) 4) (<= (count-pieces (opponent player) board) 4)
+                              (not (member (cdar (legal-moves player board)) all-jumps)))
+                         (with-foreign-object (pos '(:struct position))
+                           (setf (foreign-slot-value pos '(:struct position) 'bm) (boardt-bm board))
+                           (setf (foreign-slot-value pos '(:struct position) 'bk) (boardt-bk board))
+                           (setf (foreign-slot-value pos '(:struct position) 'wm) (boardt-wm board))
+                           (setf (foreign-slot-value pos '(:struct position) 'wk) (boardt-wk board))
+                           (setf (foreign-slot-value pos '(:struct position) 'color) (boardt-color board))
+                           (let ((dbres (dblookup pos 0)))
+                             ;; (if (> dbres 0) (format t "db: ~a~%" dbres))
+                             (cond
+                               ;; position not in database
+                               ((= dbres 0) 0)
+                               ;; win for color to move
+                               ((= dbres 1) 10000)
+                               ;; loss for color to move
+                               ((= dbres 2) -10000)
+                               ;; draw
+                               ((= dbres 3) 0)
+                               ;; conditional lookup not executed
+                               ((= dbres 4) 0))))
+                         0)
+                     )))))))
 
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply
@@ -200,7 +199,6 @@
   (if (= ply 0)
       (funcall eval-fn player board)
       (let ((moves (legal-moves player board)))
-        ;; (format t "player: ~a; ply: ~a; moves: ~a; nm: ~a~%" player ply moves (null moves))
         (if (null moves)
             most-negative-fixnum
             (do* ((best-move (random-elt moves))
@@ -216,30 +214,21 @@
                                       (funcall (if (eql npl player) #'+ #'-) cutoff)
                                       (funcall (if (eql npl player) #'+ #'-) achievable)
                                       (- ply 1) eval-fn))))
-                  ;; (print-board board2)
-                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
-                  ;;     player ply val achievable cutoff move)
                   (when (> val achievable)
                     (setf achievable val)
                     (setf best-move move)))))))))
 
-(defun alpha-beta-iterative-deepening (player board achievable cutoff ply end-time eval-fn)
+(defun alpha-beta-iterative-deepening (player board achievable cutoff ply end-time eval-fn
+                                       &key piece type)
   "Find the best move for PLAYER according to EVAL-FN, searching PLY
   levels deep. Don't call it with PLY 0."
   (if (= ply 0)
-      (progn
-        ;; (format t "---------------------~%")
-        ;; (format t "Current position for player ~a has score: ~a~%" player (funcall eval-fn player board))
-        ;; (print-board board)
-        ;; (format t "---------------------~%")
-        (funcall eval-fn player board))
-      (let ((moves (legal-moves player board)))
-        ;; (format t "---------------------~%")
-        ;; (print-board board)
-        ;; (format t "player: ~a; ply: ~a; moves: ~a; ~%" player ply moves)
-        ;; (format t "---------------------~%")
+      (funcall eval-fn player board)
+      (let ((moves (if piece
+                       (legal-moves player board :piece piece :type type)
+                       (legal-moves player board))))
         (if (null moves)
-            most-negative-fixnum
+            most-negative-fixnum                            ; PLAYER lost
             (do* ((best-move (random-elt moves))
                   (moves2 moves (cdr moves2))
                   (move (car moves2) (car moves2)))
@@ -248,27 +237,29 @@
                    (>= achievable cutoff)
                    (>= (get-internal-real-time) end-time))
                   (progn
-                   ;; (format t "player, ply, move, achievable, cutoff: ~a ~a ~a ~a ~a~%" player ply best-move achievable cutoff)
                     (values achievable best-move (>= (get-internal-real-time) end-time))))
               (multiple-value-bind (board2 kingedp)
                   (make-move player move (copy-board board))
                 (let* ((npl (next-player player move board2 kingedp))
-                       (val (funcall (if (eql npl player) #'+ #'-)
-                                     (alpha-beta-iterative-deepening
-                                      npl board2
-                                      (if (eql npl player) achievable (- cutoff))
-                                      (if (eql npl player) cutoff (- achievable))
-                                      (- ply 1) end-time eval-fn))))
-                  ;; (format t "---------------------")
-                  ;; (print-board board2)
-                  ;; (format t "player: ~a; ply: ~a; val: ~a; achievable: ~a; cutoff: ~a; move: ~a~%"
-                  ;;     player ply val achievable cutoff move)
+                       (val (if (eql npl player)
+                                (alpha-beta-iterative-deepening
+                                 npl board2 achievable cutoff
+                                 ply                        ; count multiple jumps as same ply
+                                 end-time eval-fn
+                                 :piece (+ (car move) (cdr move)) :type all-jumps)
+                                (- (alpha-beta-iterative-deepening
+                                    npl board2 (- cutoff) (- achievable)
+                                    (1- ply) end-time eval-fn)))))
                   (when (> val achievable)
                     (setf achievable val)
                     (setf best-move move)))))))))
 
-(defun alpha-beta-iterative-deepening-wrapper (player board time eval-fn)
-  (do* ((moves (legal-moves player board))
+(defun alpha-beta-iterative-deepening-wrapper (player board time eval-fn &key piece type)
+  (do* ((*black-transposition-table* (make-hash-table))
+        (*white-transposition-table* (make-hash-table))
+        (moves (if piece
+                   (legal-moves player board :piece piece :type type)
+                   (legal-moves player board)))
         (move (car moves))
         (val)
         (start-time (get-internal-real-time))
@@ -278,41 +269,44 @@
             (> ply 100)
             (= (length moves) 1)) ;; if we only have one move, just play it
         (progn
-          (format t "~a searched ~a plys in ~a seconds and found move ~a with val ~a.;~%~a~%"
+          (format t "~a searched ~a plys in ~a seconds and found move ~a with val ~a.~%"
                   player
                   (- ply 2)
                   (float (/ (- (get-internal-real-time) start-time)
                             internal-time-units-per-second))
-                  move val
-                  board)
+                  move val)
           move))
     (multiple-value-bind (new-value new-move out-of-time-p)
         (alpha-beta-iterative-deepening player board
                     most-negative-fixnum most-positive-fixnum
-                    ply end-time eval-fn)
-      (format t "~a searched ~a plys and found move ~a with val ~a.~%" player ply new-move new-value)
+                    ply end-time eval-fn :piece piece :type type)
+      (if *debug*
+          (format t "~a searched ~a plys and found move ~a with val ~a.~%"
+                  player ply new-move new-value))
       (unless out-of-time-p
         (setf val new-value)
         (setf move new-move)))))
 
 (defun alpha-beta-searcher (ply eval-fn)
   "A streatgy that searches PLY levels and then uses EVAL-FN."
-  #'(lambda (player board)
+  #'(lambda (player board &key piece type)
       (multiple-value-bind (value move)
           (alpha-beta player board
                       most-negative-fixnum most-positive-fixnum
-                      ply eval-fn)
+                      ply eval-fn :piece piece :type type)
         (declare (ignore value))
         move)))
 
 (defun alpha-beta-iterative-deepening-searcher (time eval-fn)
   "A streatgy that searches for TIME seconds and then uses EVAL-FN."
-  #'(lambda (player board)
+  #'(lambda (player board &key piece type)
       (alpha-beta-iterative-deepening-wrapper player board
-                                              (* time internal-time-units-per-second)
-                                              eval-fn)))
+                                              (* (- time .01) ; leave 0.01s buffer
+                                                 internal-time-units-per-second)
+                                              eval-fn
+                                              :piece piece :type type)))
 
-(defun human (player board)
+(defun human (player board &key piece type)
   "A human player for the game of Checkers"
   (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
   (format *query-io* "cl-checkers$ ")

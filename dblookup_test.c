@@ -1,8 +1,3 @@
-// Title
-// Description
-// by Nicolas Avrutin
-// 2013
-
 #include <stdlib.h>
 #include <stdio.h>
 #include "dblookup.h"
@@ -20,6 +15,6 @@ int main(){
     /* DEBUG */
     fprintf(stderr, "i: %d\n", i);
     /* DEBUG */
-    
+
     return 0;
 }
