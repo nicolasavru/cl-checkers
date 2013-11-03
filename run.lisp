@@ -3,13 +3,6 @@
 
 (setf *random-state* (make-random-state t))
 
-(defparameter *str* (foreign-string-alloc (make-string 256 :initial-element #\null)))
-
-(db-init 768 *str*)
-;; (foreign-string-to-lisp *str*)
-
-(format t "~%~%")
-
 (defun computer-strategy (time)
   (alpha-beta-iterative-deepening-searcher time #'aggregate-eval-fun))
 
