@@ -41,7 +41,7 @@
   (wk 0 :type fixnum)
   (color black :type fixnum))
 
-;; default values
+;; default parameters
 (defparameter *xscale* 1)
 (defparameter *yscale* 1)
 (defparameter *debug* nil)
@@ -77,8 +77,6 @@
         player
         (opponent player))))
 
-(deftype boardarr () '(simple-array piece (100)))
-
 (defun bref (board square) (aref board square))
 (defsetf bref (board square) (val)
   `(setf (aref ,board ,square) ,val))
@@ -87,8 +85,13 @@
   (copy-seq squares))
 
 (defun copy-board (board)
+  "Deep copy BOARD."
   (let ((new-board (copy-boardt board)))
     (setf (boardt-squares new-board) (copy-squares (boardt-squares board)))
+    (setf (boardt-black-pos-piece-table new-board)
+          (copy-hash-table (boardt-black-pos-piece-table board)))
+    (setf (boardt-white-pos-piece-table new-board)
+          (copy-hash-table (boardt-white-pos-piece-table board)))
     new-board))
 
 (defparameter all-squares

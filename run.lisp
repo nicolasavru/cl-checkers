@@ -30,10 +30,10 @@
 (defparameter *black-computer-p* (y-or-n-p "Is black player a computer?"))
 (defparameter *white-computer-p* (y-or-n-p "Is white player a computer?"))
 
-(require :sb-sprof)
-(sb-sprof:with-profiling (:max-samples 10000
-                               :report :flat
-                               :loop nil)
+;; (require :sb-sprof)
+;; (sb-sprof:with-profiling (:max-samples 10000
+;;                                :report :flat
+;;                                :loop nil)
 (if (y-or-n-p "Load a game?")
     (let ((fname))
       (format *query-io* "Enter the board file: ")
@@ -51,8 +51,7 @@
        (if *black-computer-p* (computer-strategy time) #'human)
        (if *white-computer-p* (computer-strategy time) #'human)
        )))
-)
-
+;; )
 
 ;; (checkers (alpha-beta-iterative-deepening-searcher 1 #'aggregate-eval-fun)
 ;;           (alpha-beta-iterative-deepening-searcher 1 #'simple-eval-fun))

@@ -37,22 +37,20 @@
                            (boardt-num-black-men board)
                            (boardt-num-black-kings board)))
            (enemy-pos-pieces (player-pieces (opponent player) board))
-           (sd (float (apply #'+ 1
-                             (maphash
-                              #'(lambda (enpos enpos-piece)
-                                  (declare (ignore enpos-piece))
-                                  (multiple-value-bind (enrow encol)
-                                      (floor enpos 10)
-                                    (let ((rowdist (abs (- row enrow)))
-                                          (coldist (abs (- col encol))))
-                                      (+ (if (> num-pieces 5)
-                                             (* rowdist rowdist rowdist)
-                                             rowdist)
-                                         (if (> num-pieces 5)
-                                             (* coldist coldist coldist)
-                                             coldist)))))
-                              enemy-pos-pieces)))))
-      (/ 96.0 sd))))
+           (sd (float (+ 1 (reduce #'+ (hash-table-keys enemy-pos-pieces)
+                                   :key #'(lambda (enpos)
+                                            (multiple-value-bind (enrow encol)
+                                                (floor enpos 10)
+                                              (let ((rowdist (abs (- row enrow)))
+                                                    (coldist (abs (- col encol))))
+                                                (+ (if (> num-pieces 5)
+                                                       (* rowdist rowdist rowdist)
+                                                       rowdist)
+                                                   (if (> num-pieces 5)
+                                                       (* coldist coldist coldist)
+                                                       coldist)))))
+                                   :initial-value 0)))))
+      (/ 128.0 sd))))
 
 (defun total-piece-value (pos-piece player board)
   "Return total value associated with piece."
@@ -76,24 +74,12 @@
   "Count player's pieces minus opponent's pieces."
   (let ((player-pos-pieces (player-pieces player board))
         (opponent-pos-pieces (player-pieces (opponent player) board)))
-    ;; (- (reduce #'+ player-pos-pieces
-    ;;            :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
-    ;;            :initial-value 0)
-    ;;    (reduce #'+ opponent-pos-pieces
-    ;;            :key #'(lambda (pos-piece) (funcall value-fun pos-piece (opponent player) board))
-    ;;            :initial-value 0))
-    (- (apply #'+ (maphash
-                   #'(lambda (pos pos-piece)
-                       (declare (ignore pos))
-                       (funcall value-fun pos-piece player board))
-                   player-pos-pieces))
-       (apply #'+ (maphash
-                   #'(lambda (pos pos-piece)
-                       (declare (ignore pos))
-                       (funcall value-fun pos-piece (opponent player) board))
-                   opponent-pos-pieces)))
-
-    ))
+    (- (reduce #'+ (hash-table-values player-pos-pieces)
+               :key #'(lambda (pos-piece) (funcall value-fun pos-piece player board))
+               :initial-value 0)
+       (reduce #'+ (hash-table-values opponent-pos-pieces)
+               :key #'(lambda (pos-piece) (funcall value-fun pos-piece (opponent player) board))
+               :initial-value 0))))
 
 (defun piece-ratio (player board)
   "Count player's pieces divided by opponent's pieces."
@@ -117,17 +103,24 @@
         (setf (gethash board (if (eql player 'black)
                                  *black-transposition-table*
                                  *white-transposition-table*))
-              (let ((wdif (weighted-piece-difference player board #'total-piece-value))
-                    (dif (piece-difference player board))
-                    (rat (piece-ratio player board)))
-                (+
-                 ;; maximize piece value difference
-                 wdif
-                 0
-                 ;; trade pieces (maximize rat) if up in pieces
-                 (* (cond ((> dif 0) 100)
-                          ((= dif 0) 0)
-                          ((< dif 0) -100)) rat)))))))
+              ;; treat 1 piece vs 1 piece as a draw and evaluate it as 0
+              (if (= (+ (boardt-num-white-men board)
+                        (boardt-num-white-kings board))
+                     (+ (boardt-num-black-men board)
+                        (boardt-num-black-kings board))
+                     1)
+                  0
+                  (let ((wdif (weighted-piece-difference player board #'total-piece-value))
+                        (dif (piece-difference player board))
+                        (rat (piece-ratio player board)))
+                    (+
+                     ;; maximize piece value difference
+                     wdif
+                     0
+                     ;; trade pieces (maximize rat) if up in pieces
+                     (* (cond ((> dif 0) 100)
+                              ((= dif 0) 0)
+                              ((< dif 0) -100)) rat))))))))
 
 (defun maximizer (eval-fn)
   "Return a strategy that will consider every legal move, apply
@@ -285,12 +278,12 @@
   "A streatgy that searches for TIME seconds and then uses EVAL-FN."
   #'(lambda (player board &key piece type)
       (alpha-beta-iterative-deepening-wrapper player board
-                                              (* (- time .02) ; margin of error
+                                              (* (- time .03) ; margin of error
                                                  internal-time-units-per-second)
                                               eval-fn
                                               :piece piece :type type)))
 
-(defun human (player board)
+(defun human (player board &key piece type)
   "A human player for the game of Checkers"
   (format t "Legal moves for player ~a: ~%~{~a~%~}" player (legal-moves player board))
   (format *query-io* "cl-checkers$ ")

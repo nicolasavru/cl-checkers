@@ -1,4 +1,4 @@
 ;;;; package.lisp
 
 (defpackage #:checkers
-  (:use #:cl))
+  (:use #:cl :alexandria))

@@ -1,9 +1,9 @@
 (in-package #:checkers)
 
-(defun random-elt (lst)
-  (let ((len (length lst)))
-    (if (> len 0)
-        (elt lst (random len)))))
+;; (defun random-elt (lst)
+;;   (let ((len (length lst)))
+;;     (if (> len 0)
+;;         (elt lst (random len)))))
 
 (defun mkstr (&rest args)
   (with-output-to-string (s)
